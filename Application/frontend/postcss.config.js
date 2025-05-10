@@ -4,9 +4,11 @@ import postcssNesting from 'postcss-nesting'
 
 /** @type {import('postcss').Config} */
 export default {
-  plugins: [
-    postcssNesting,
-    tailwindcss,
-    autoprefixer
-  ]
+  plugins: {
+    'postcss-import': {},
+    'postcss-nesting': {},
+    'tailwindcss/nesting': {},
+    tailwindcss: {},
+    autoprefixer: {},
+  },
 }
