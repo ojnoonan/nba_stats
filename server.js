@@ -1,146 +1,40 @@
 const { spawn } = require('child_process');
 const path = require('path');
-const fs = require('fs');
 
 const AMP_BASE_PATH = '/AMP/node-server/app';
-const VENV_PATH = path.join(AMP_BASE_PATH, 'venv');
-
-// Create and setup virtual environment
-async function setupVirtualEnv() {
-    return new Promise((resolve, reject) => {
-        console.log('Setting up Python virtual environment...');
-        
-        // Create venv directory if it doesn't exist
-        if (!fs.existsSync(VENV_PATH)) {
-            console.log('Creating new virtual environment...');
-            // First, remove any existing venv directory
-            if (fs.existsSync(VENV_PATH)) {
-                fs.rmSync(VENV_PATH, { recursive: true, force: true });
-            }
-
-            // Create new virtual environment using system python3
-            const createVenv = spawn('python3', ['-m', 'venv', VENV_PATH], {
-                shell: true,
-                env: { ...process.env, PYTHONPATH: '' }
-            });
-
-            createVenv.stdout.on('data', (data) => {
-                console.log(`Venv setup: ${data.toString().trim()}`);
-            });
-
-            createVenv.stderr.on('data', (data) => {
-                console.error(`Venv setup error: ${data.toString().trim()}`);
-            });
-
-            createVenv.on('close', (code) => {
-                if (code === 0) {
-                    // Install requirements using the virtual environment's python
-                    console.log('Installing Python dependencies...');
-                    const pip = spawn(path.join(VENV_PATH, 'bin/python3'), ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
-                        cwd: path.join(AMP_BASE_PATH, 'Application/backend'),
-                        env: {
-                            ...process.env,
-                            VIRTUAL_ENV: VENV_PATH,
-                            PATH: `${path.join(VENV_PATH, 'bin')}:${process.env.PATH}`,
-                            PYTHONPATH: ''
-                        }
-                    });
-
-                    pip.stdout.on('data', (data) => {
-                        console.log(`Pip install: ${data.toString().trim()}`);
-                    });
-
-                    pip.stderr.on('data', (data) => {
-                        console.error(`Pip error: ${data.toString().trim()}`);
-                    });
-
-                    pip.on('close', (code) => {
-                        if (code === 0) {
-                            resolve();
-                        } else {
-                            reject(new Error(`pip install failed with code ${code}`));
-                        }
-                    });
-                } else {
-                    reject(new Error(`venv creation failed with code ${code}`));
-                }
-            });
-        } else {
-            // Virtual environment exists, just install requirements
-            console.log('Installing Python dependencies in existing virtual environment...');
-            const pip = spawn(path.join(VENV_PATH, 'bin/python3'), ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
-                cwd: path.join(AMP_BASE_PATH, 'Application/backend'),
-                env: {
-                    ...process.env,
-                    VIRTUAL_ENV: VENV_PATH,
-                    PATH: `${path.join(VENV_PATH, 'bin')}:${process.env.PATH}`,
-                    PYTHONPATH: ''
-                }
-            });
-
-            pip.stdout.on('data', (data) => {
-                console.log(`Pip install: ${data.toString().trim()}`);
-            });
-
-            pip.stderr.on('data', (data) => {
-                console.error(`Pip error: ${data.toString().trim()}`);
-            });
-
-            pip.on('close', (code) => {
-                if (code === 0) {
-                    resolve();
-                } else {
-                    reject(new Error(`pip install failed with code ${code}`));
-                }
-            });
-        }
-    });
-}
 
 // Start the Python backend
 async function startBackend() {
-    try {
-        await setupVirtualEnv();
-        
-        return new Promise((resolve, reject) => {
-            console.log('Starting backend server...');
-            const server = spawn(path.join(VENV_PATH, 'bin/python3'), ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
-                cwd: path.join(AMP_BASE_PATH, 'Application/backend'),
-                stdio: ['pipe', 'pipe', 'pipe'],
-                env: {
-                    ...process.env,
-                    VIRTUAL_ENV: VENV_PATH,
-                    PATH: `${path.join(VENV_PATH, 'bin')}:${process.env.PATH}`,
-                    PYTHONPATH: ''
-                }
-            });
-
-            server.stdout.on('data', (data) => {
-                console.log(`Backend: ${data.toString().trim()}`);
-            });
-
-            server.stderr.on('data', (data) => {
-                console.error(`Backend error: ${data.toString().trim()}`);
-            });
-
-            server.on('error', (error) => {
-                console.error('Backend server error:', error);
-                reject(error);
-            });
-
-            resolve(server);
+    return new Promise((resolve, reject) => {
+        console.log('Starting backend server...');
+        const server = spawn('python3', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
+            cwd: path.join(AMP_BASE_PATH, 'Application/backend'),
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env }
         });
-    } catch (error) {
-        console.error('Error setting up Python environment:', error);
-        throw error;
-    }
+
+        server.stdout.on('data', (data) => {
+            console.log(`Backend: ${data.toString().trim()}`);
+        });
+
+        server.stderr.on('data', (data) => {
+            console.error(`Backend error: ${data.toString().trim()}`);
+        });
+
+        server.on('error', (error) => {
+            console.error('Backend server error:', error);
+            reject(error);
+        });
+
+        resolve(server);
+    });
 }
 
 // Start the frontend
 async function startFrontend() {
     return new Promise((resolve, reject) => {
         console.log('Starting frontend server...');
-        const frontend = spawn('npm', ['run', 'preview', '--', '--port', '7779', '--host'], {
+        const frontend = spawn('npm', ['run', 'preview', '--', '--port', '80', '--host'], {
             cwd: path.join(AMP_BASE_PATH, 'Application/frontend'),
             shell: true,
             env: { ...process.env, NODE_ENV: 'production' }
