@@ -3,7 +3,7 @@ const path = require('path');
 
 const AMP_BASE_PATH = '/AMP/node-server/app';
 const FRONTEND_PORT = 7779;
-const BACKEND_PORT = 8000;
+const BACKEND_PORT = 7778;
 
 // Start the Python backend
 async function startBackend() {

@@ -11,5 +11,8 @@ export default defineConfig({
   },
   css: {
     postcss: './postcss.config.cjs'
+  },
+  define: {
+    'process.env.VITE_API_URL': JSON.stringify('http://localhost:7778')
   }
 })

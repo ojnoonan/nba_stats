@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000'
+const API_BASE_URL = 'http://localhost:7778'
 const RETRY_COUNT = 3
 const RETRY_DELAY = 1000 // 1 second
 const REQUEST_TIMEOUT = 15000 // 15 seconds
