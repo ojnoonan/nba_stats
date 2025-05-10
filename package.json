@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "NBA Stats Application",
   "scripts": {
-    "postinstall": "cd ./Application/frontend && npm install && npm run build",
+    "postinstall": "cd ./Application/frontend && rm -rf node_modules && npm install && npm run build",
     "start": "cd ./Application/frontend && npm run preview -- --port 7779 --host"
   },
   "dependencies": {}
