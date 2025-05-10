@@ -1,9 +1,28 @@
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 
 const AMP_BASE_PATH = '/AMP/node-server/app';
 const FRONTEND_PORT = 7779;
 const BACKEND_PORT = 7778;
+
+// Install required system packages
+function installSystemPackages() {
+    console.log('Installing Python packages from requirements.txt...');
+    try {
+        const requirementsPath = path.join(AMP_BASE_PATH, 'Application/backend/requirements.txt');
+        const pipResult = spawnSync('pip3', ['install', '--user', '-r', requirementsPath], { stdio: 'inherit' });
+        if (pipResult.error || pipResult.status !== 0) {
+            console.error('Failed to install Python packages');
+            return false;
+        }
+
+        console.log('Successfully installed all required packages');
+        return true;
+    } catch (error) {
+        console.error('Error installing packages:', error);
+        return false;
+    }
+}
 
 // Start the Python backend
 async function startBackend() {
@@ -42,7 +61,6 @@ async function startBackend() {
 async function startFrontend() {
     return new Promise((resolve, reject) => {
         console.log('Starting frontend server...');
-        // Use relative path for proxy to work in Docker
         const frontend = spawn('npm', ['run', 'preview', '--', '--port', FRONTEND_PORT.toString(), '--host', '0.0.0.0'], {
             cwd: path.join(AMP_BASE_PATH, 'Application/frontend'),
             shell: true,
@@ -89,6 +107,11 @@ process.on('SIGINT', shutdown);
 console.log('Starting NBA Stats services...');
 async function start() {
     try {
+        // Install required packages first
+        if (!installSystemPackages()) {
+            throw new Error('Failed to install required packages');
+        }
+
         backend = await startBackend();
         console.log('Backend started successfully');
         frontend = await startFrontend();
