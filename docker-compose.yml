@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./Application/backend
+      dockerfile: Dockerfile
+    container_name: nba_stats_backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - DATABASE_URL=sqlite:///data/nba_stats.db
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "amp.name=NBA Stats Backend"
+      - "amp.description=FastAPI backend service"
+
+  frontend:
+    build:
+      context: ./Application/frontend
+      dockerfile: Dockerfile
+    container_name: nba_stats_frontend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "amp.name=NBA Stats Frontend"
+      - "amp.description=React frontend service"
+
+volumes:
+  data:
+  logs:

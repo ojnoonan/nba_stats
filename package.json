@@ -1,0 +1,11 @@
+{
+  "name": "nba-stats-app",
+  "version": "1.0.0",
+  "description": "NBA Stats Application",
+  "main": "start.js",
+  "scripts": {
+    "start": "node start.js",
+    "stop": "docker-compose down"
+  },
+  "dependencies": {}
+}
