@@ -64,30 +64,28 @@ def job_listener(event):
 
 def start_scheduler():
     """Start the scheduler for periodic NBA data updates"""
-    scheduler = AsyncIOScheduler()
-    
-    # Add event listeners
-    scheduler.add_listener(job_listener, EVENT_JOB_ERROR | EVENT_JOB_EXECUTED)
-    
-    # Get initial update time (4 AM EST)
-    now = datetime.now()
-    update_time = now.replace(hour=4, minute=0, second=0, microsecond=0)
-    if now.hour >= 4:  # if it's past 4 AM, schedule for next day
-        update_time = update_time + timedelta(days=1)
-    
-    # Schedule the update_nba_data job
-    scheduler.add_job(
-        update_nba_data,
-        'interval',
-        hours=6,  # Run every 6 hours
-        start_date=update_time,
-        id='update_nba_data',
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=3600  # Allow job to be 1 hour late
-    )
-    
-    scheduler.start()
-    logger.info(f"NBA data update scheduler started. Next update at {update_time}")
-    return scheduler
+    try:
+        scheduler = AsyncIOScheduler()
+        
+        # Add event listeners
+        scheduler.add_listener(job_listener, EVENT_JOB_ERROR | EVENT_JOB_EXECUTED)
+        
+        # Schedule the update_nba_data job to run every 6 hours
+        scheduler.add_job(
+            update_nba_data,
+            trigger='interval',
+            hours=6,
+            id='update_nba_data',
+            next_run_time=datetime.now(),  # Run immediately on startup
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600  # Allow job to be 1 hour late
+        )
+        
+        scheduler.start()
+        logger.info("NBA data update scheduler started successfully")
+        return scheduler
+    except Exception as e:
+        logger.error(f"Failed to start scheduler: {str(e)}")
+        raise

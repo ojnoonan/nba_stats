@@ -22,10 +22,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configure NBA API to skip SSL verification
+# Configure NBA API
 http.STATS_HEADERS['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+http.TIMEOUT = 60
 requests.packages.urllib3.disable_warnings()
 http.VERIFY = False
+
+# If running in a container, set SSL verification to False
+os.environ['PYTHONHTTPSVERIFY'] = '0'
 
 def parse_nba_date(date_str: str) -> datetime:
     """Parse date string from NBA API in various formats"""
