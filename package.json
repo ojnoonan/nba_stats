@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "NBA Stats Application",
   "scripts": {
-    "postinstall": "cd ./Application/frontend && rm -rf node_modules && npm install && npm run build",
+    "postinstall": "cd ./Application/frontend && rm -rf node_modules && npm install && mkdir -p src/lib && echo 'import { QueryClient } from \"@tanstack/react-query\"; export const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 1000 * 60 * 5, cacheTime: 1000 * 60 * 30, retry: 2, refetchOnWindowFocus: false } } });' > src/lib/queryClient.js && npm run build",
     "start": "cd ./Application/frontend && npm run preview -- --port 7779 --host"
   },
   "dependencies": {}
