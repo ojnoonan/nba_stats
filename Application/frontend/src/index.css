@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 224 71% 4%;
+    --foreground: 213 31% 91%;
+
+    --card: 224 71% 4%;
+    --card-foreground: 213 31% 91%;
+ 
+    --popover: 224 71% 4%;
+    --popover-foreground: 213 31% 91%;
+ 
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 1.2%;
+ 
+    --secondary: 222.2 47.4% 11.2%;
+    --secondary-foreground: 210 40% 98%;
+ 
+    --muted: 223 47% 11%;
+    --muted-foreground: 215.4 16.3% 56.9%;
+ 
+    --accent: 216 34% 17%;
+    --accent-foreground: 210 40% 98%;
+ 
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+ 
+    --border: 216 34% 17%;
+    --input: 216 34% 17%;
+    --ring: 216 34% 17%;
+ 
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .glossy-card {
+    @apply relative overflow-hidden rounded-lg bg-gradient-to-br from-accent to-card p-6 shadow-lg;
+    &:before {
+      content: '';
+      @apply absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent;
+      @apply opacity-0 group-hover:opacity-100 transition-opacity duration-300;
+      background-size: 200% 100%;
+      animation: gloss 2s linear infinite;
+    }
+  }
+
+  .nav-link {
+    @apply relative px-4 py-2 text-foreground/90 transition-colors hover:text-foreground;
+    &:after {
+      content: '';
+      @apply absolute bottom-0 left-0 h-0.5 w-0 bg-primary transition-all duration-300;
+    }
+    &:hover:after {
+      @apply w-full;
+    }
+  }
+
+  .stat-value {
+    @apply text-2xl font-bold text-primary;
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+  }
+
+  .stat-card {
+    @apply p-4 rounded-lg bg-card border border-border/50 hover:border-primary/50 transition-colors;
+    @apply transition-all duration-300;
+    &:hover {
+      @apply transform -translate-y-1 shadow-lg shadow-primary/10;
+      .stat-value {
+        @apply scale-110 transform;
+      }
+    }
+  }
+
+  /* Interactive element hover effects */
+  .player-card {
+    @apply transform transition-all duration-300 ease-in-out hover:scale-[1.02] hover:shadow-lg;
+    &:hover .player-image {
+      @apply ring-2 ring ring-primary/50;
+    }
+  }
+
+  .team-logo {
+    @apply transition-transform duration-300 ease-in-out;
+    &:hover {
+      @apply scale-110;
+    }
+  }
+
+  /* Expanded content animations */
+  .expanded-content {
+    @apply transition-all duration-300;
+    animation: slideDown 0.3s ease-out;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes gloss {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .team-card {
+    @apply relative overflow-hidden rounded-lg border border-border/50 bg-card p-4 transition-all duration-300;
+    
+    &:hover {
+      @apply border-transparent scale-105;
+      border-radius: 9999px;
+      
+      .shine-effect {
+        animation: shine 1s forwards;
+      }
+    }
+    
+    &.loading {
+      @apply opacity-80;
+    }
+  }
+  
+  .shine-effect {
+    @apply absolute inset-0 pointer-events-none;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      transparent 100%
+    );
+    transform: translateX(-100%);
+  }
+
+  @keyframes shine {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}
