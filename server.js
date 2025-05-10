@@ -4,45 +4,75 @@ const path = require('path');
 const AMP_BASE_PATH = '/AMP/node-server/app';
 
 // Start the Python backend
-function startBackend() {
-    const backend = spawn('python3', ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
-        cwd: path.join(AMP_BASE_PATH, 'Application/backend')
-    }).on('close', (code) => {
-        if (code === 0) {
-            const server = spawn('python3', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
-                cwd: path.join(AMP_BASE_PATH, 'Application/backend')
-            });
+async function startBackend() {
+    return new Promise((resolve, reject) => {
+        console.log('Installing Python dependencies...');
+        const pip = spawn('python3', ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
+            cwd: path.join(AMP_BASE_PATH, 'Application/backend')
+        });
 
-            server.stdout.on('data', (data) => {
-                console.log(`Backend: ${data}`);
-            });
+        pip.stdout.on('data', (data) => {
+            console.log(`Pip install: ${data}`);
+        });
 
-            server.stderr.on('data', (data) => {
-                console.error(`Backend error: ${data}`);
-            });
-        }
+        pip.stderr.on('data', (data) => {
+            console.error(`Pip error: ${data}`);
+        });
+
+        pip.on('close', (code) => {
+            if (code === 0) {
+                console.log('Starting backend server...');
+                const server = spawn('python3', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
+                    cwd: path.join(AMP_BASE_PATH, 'Application/backend'),
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+
+                server.stdout.on('data', (data) => {
+                    console.log(`Backend: ${data.toString().trim()}`);
+                });
+
+                server.stderr.on('data', (data) => {
+                    console.error(`Backend error: ${data.toString().trim()}`);
+                });
+
+                server.on('error', (error) => {
+                    console.error('Backend server error:', error);
+                    reject(error);
+                });
+
+                resolve(server);
+            } else {
+                reject(new Error(`pip install failed with code ${code}`));
+            }
+        });
     });
-
-    return backend;
 }
 
 // Start the frontend
-function startFrontend() {
-    const frontend = spawn('npm', ['run', 'preview', '--', '--port', '7779', '--host'], {
-        cwd: path.join(AMP_BASE_PATH, 'Application/frontend'),
-        shell: true,
-        env: { ...process.env, NODE_ENV: 'production' }
-    });
+async function startFrontend() {
+    return new Promise((resolve, reject) => {
+        console.log('Starting frontend server...');
+        const frontend = spawn('npm', ['run', 'preview', '--', '--port', '7779', '--host'], {
+            cwd: path.join(AMP_BASE_PATH, 'Application/frontend'),
+            shell: true,
+            env: { ...process.env, NODE_ENV: 'production' }
+        });
 
-    frontend.stdout.on('data', (data) => {
-        console.log(`Frontend: ${data}`);
-    });
+        frontend.stdout.on('data', (data) => {
+            console.log(`Frontend: ${data.toString().trim()}`);
+        });
 
-    frontend.stderr.on('data', (data) => {
-        console.error(`Frontend error: ${data}`);
-    });
+        frontend.stderr.on('data', (data) => {
+            console.error(`Frontend error: ${data.toString().trim()}`);
+        });
 
-    return frontend;
+        frontend.on('error', (error) => {
+            console.error('Frontend server error:', error);
+            reject(error);
+        });
+
+        resolve(frontend);
+    });
 }
 
 // Handle graceful shutdown
@@ -61,5 +91,31 @@ process.on('SIGINT', shutdown);
 
 // Start services
 console.log('Starting NBA Stats services...');
-backend = startBackend();
-frontend = startFrontend();
+async function start() {
+    try {
+        backend = await startBackend();
+        console.log('Backend started successfully');
+        frontend = await startFrontend();
+        console.log('Frontend started successfully');
+
+        // Monitor processes for unexpected exits
+        backend.on('close', (code) => {
+            console.log(`Backend process exited with code ${code}`);
+            if (code !== 0) {
+                shutdown();
+            }
+        });
+
+        frontend.on('close', (code) => {
+            console.log(`Frontend process exited with code ${code}`);
+            if (code !== 0) {
+                shutdown();
+            }
+        });
+    } catch (error) {
+        console.error('Error starting services:', error);
+        shutdown();
+    }
+}
+
+start();
