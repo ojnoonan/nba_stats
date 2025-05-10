@@ -2,8 +2,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager, asynccontextmanager
+import os
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./nba_stats.db"
+# Create data directory if it doesn't exist
+DATA_DIR = "/app/data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/nba_stats.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
