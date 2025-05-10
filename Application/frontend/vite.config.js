@@ -14,17 +14,12 @@ export default defineConfig({
   },
   preview: {
     port: 7779,
-    host: '0.0.0.0',
     proxy: {
-      '^/api/.*': {
-        target: 'http://0.0.0.0:7778',
+      '/api': {
+        target: 'http://localhost:7778',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
-        secure: false,
-        ws: true,
-        headers: {
-          'Origin': 'http://localhost:7779'
-        }
+        secure: false
       }
     }
   }
