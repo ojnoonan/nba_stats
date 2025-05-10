@@ -9,11 +9,10 @@ import os
 import sys
 
 from app.models.models import DataUpdateStatus, Team
-from app.services.scheduler import start_scheduler
-from app.services.nba_data_service import NBADataService
-from app.routers import teams, players, games, search
 from app.database.database import get_db, get_async_db, engine, Base, SessionLocal
 from app.database.init_db import init_db
+from app.services.nba_data_service import NBADataService
+from app.routers import teams, players, games, search
 
 # Configure logging
 logging.basicConfig(
@@ -108,8 +107,13 @@ async def startup_event():
         finally:
             db.close()
             
-        # Start the scheduler
-        scheduler = start_scheduler()
+        # Try to start the scheduler if available
+        try:
+            from app.services.scheduler import start_scheduler
+            scheduler = start_scheduler()
+            logger.info("Scheduler started successfully")
+        except ImportError:
+            logger.warning("Scheduler not available - automatic updates disabled")
         
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
