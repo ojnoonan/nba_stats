@@ -4,6 +4,8 @@ const fs = require('fs');
 
 const AMP_BASE_PATH = '/AMP/node-server/app';
 const VENV_PATH = path.join(AMP_BASE_PATH, 'venv');
+const PYTHON_PATH = path.join(VENV_PATH, 'bin', 'python');
+const PIP_PATH = path.join(VENV_PATH, 'bin', 'pip');
 
 // Create and setup virtual environment
 async function setupVirtualEnv() {
@@ -12,7 +14,8 @@ async function setupVirtualEnv() {
         
         // Create venv directory if it doesn't exist
         if (!fs.existsSync(VENV_PATH)) {
-            const createVenv = spawn('python3', ['-m', 'venv', VENV_PATH], {
+            console.log('Creating new virtual environment...');
+            const createVenv = spawn('python3', ['-m', 'venv', '--without-pip', VENV_PATH], {
                 shell: true
             });
 
@@ -24,35 +27,98 @@ async function setupVirtualEnv() {
                 console.error(`Venv setup error: ${data.toString().trim()}`);
             });
 
-            createVenv.on('close', (code) => {
+            createVenv.on('close', async (code) => {
                 if (code === 0) {
-                    // Install requirements using venv pip
-                    console.log('Installing Python dependencies in virtual environment...');
-                    const pip = spawn(path.join(VENV_PATH, 'bin', 'pip'), ['install', '-r', 'requirements.txt'], {
-                        cwd: path.join(AMP_BASE_PATH, 'Application/backend')
-                    });
+                    try {
+                        // Install pip in the virtual environment
+                        console.log('Installing pip in virtual environment...');
+                        await new Promise((resolve, reject) => {
+                            const getPip = spawn(PYTHON_PATH, ['-m', 'ensurepip', '--default-pip'], {
+                                shell: true
+                            });
 
-                    pip.stdout.on('data', (data) => {
-                        console.log(`Pip install: ${data.toString().trim()}`);
-                    });
+                            getPip.stdout.on('data', (data) => {
+                                console.log(`Pip setup: ${data.toString().trim()}`);
+                            });
 
-                    pip.stderr.on('data', (data) => {
-                        console.error(`Pip error: ${data.toString().trim()}`);
-                    });
+                            getPip.stderr.on('data', (data) => {
+                                console.error(`Pip setup error: ${data.toString().trim()}`);
+                            });
 
-                    pip.on('close', (code) => {
-                        if (code === 0) {
-                            resolve();
-                        } else {
-                            reject(new Error(`pip install failed with code ${code}`));
-                        }
-                    });
+                            getPip.on('close', (code) => {
+                                if (code === 0) {
+                                    resolve();
+                                } else {
+                                    reject(new Error(`pip installation failed with code ${code}`));
+                                }
+                            });
+                        });
+
+                        // Upgrade pip
+                        await new Promise((resolve, reject) => {
+                            const upgradePip = spawn(PIP_PATH, ['install', '--upgrade', 'pip'], {
+                                shell: true
+                            });
+
+                            upgradePip.on('close', (code) => {
+                                if (code === 0) {
+                                    resolve();
+                                } else {
+                                    reject(new Error(`pip upgrade failed with code ${code}`));
+                                }
+                            });
+                        });
+
+                        // Install requirements
+                        console.log('Installing Python dependencies...');
+                        const pip = spawn(PIP_PATH, ['install', '-r', 'requirements.txt'], {
+                            cwd: path.join(AMP_BASE_PATH, 'Application/backend')
+                        });
+
+                        pip.stdout.on('data', (data) => {
+                            console.log(`Pip install: ${data.toString().trim()}`);
+                        });
+
+                        pip.stderr.on('data', (data) => {
+                            console.error(`Pip error: ${data.toString().trim()}`);
+                        });
+
+                        pip.on('close', (code) => {
+                            if (code === 0) {
+                                resolve();
+                            } else {
+                                reject(new Error(`pip install requirements failed with code ${code}`));
+                            }
+                        });
+                    } catch (error) {
+                        reject(error);
+                    }
                 } else {
                     reject(new Error(`venv creation failed with code ${code}`));
                 }
             });
         } else {
-            resolve();
+            // Virtual environment exists, just install requirements
+            console.log('Installing Python dependencies in existing virtual environment...');
+            const pip = spawn(PIP_PATH, ['install', '-r', 'requirements.txt'], {
+                cwd: path.join(AMP_BASE_PATH, 'Application/backend')
+            });
+
+            pip.stdout.on('data', (data) => {
+                console.log(`Pip install: ${data.toString().trim()}`);
+            });
+
+            pip.stderr.on('data', (data) => {
+                console.error(`Pip error: ${data.toString().trim()}`);
+            });
+
+            pip.on('close', (code) => {
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`pip install requirements failed with code ${code}`));
+                }
+            });
         }
     });
 }
@@ -64,7 +130,7 @@ async function startBackend() {
         
         return new Promise((resolve, reject) => {
             console.log('Starting backend server...');
-            const server = spawn(path.join(VENV_PATH, 'bin', 'python'), ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
+            const server = spawn(PYTHON_PATH, ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
                 cwd: path.join(AMP_BASE_PATH, 'Application/backend'),
                 stdio: ['pipe', 'pipe', 'pipe']
             });
