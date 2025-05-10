@@ -41,14 +41,15 @@ async function startBackend() {
 async function startFrontend() {
     return new Promise((resolve, reject) => {
         console.log('Starting frontend server...');
-        const frontend = spawn('npm', ['run', 'preview', '--', '--port', FRONTEND_PORT.toString(), '--host'], {
+        const frontend = spawn('npm', ['run', 'preview', '--', '--port', FRONTEND_PORT.toString(), '--host', '0.0.0.0'], {
             cwd: path.join(AMP_BASE_PATH, 'Application/frontend'),
             shell: true,
             env: { 
                 ...process.env, 
                 NODE_ENV: 'production',
-                VITE_BACKEND_URL: `http://localhost:${BACKEND_PORT}`,
-                VITE_USE_PROXY: 'true'
+                VITE_BACKEND_URL: `http://0.0.0.0:${BACKEND_PORT}`,
+                PORT: FRONTEND_PORT.toString(),
+                HOST: '0.0.0.0'
             }
         });
 
