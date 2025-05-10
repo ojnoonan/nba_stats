@@ -12,7 +12,7 @@ async function startBackend() {
             stdio: ['pipe', 'pipe', 'pipe'],
             env: {
                 ...process.env,
-                PYTHONPATH: '/usr/lib/python3/dist-packages:/usr/local/lib/python3.11/dist-packages:/usr/lib/python3.11/dist-packages',
+                PYTHONPATH: `${path.join(AMP_BASE_PATH, 'Application/backend')}:/usr/lib/python3/dist-packages:/usr/local/lib/python3.11/dist-packages:/usr/lib/python3.11/dist-packages`,
                 PYTHONUSERBASE: '/usr/local',
                 PATH: `/usr/local/bin:${process.env.PATH}`
             }
