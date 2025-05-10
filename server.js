@@ -10,7 +10,12 @@ async function startBackend() {
         const server = spawn('python3', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
             cwd: path.join(AMP_BASE_PATH, 'Application/backend'),
             stdio: ['pipe', 'pipe', 'pipe'],
-            env: { ...process.env }
+            env: {
+                ...process.env,
+                PYTHONPATH: '/usr/lib/python3/dist-packages:/usr/local/lib/python3.11/dist-packages:/usr/lib/python3.11/dist-packages',
+                PYTHONUSERBASE: '/usr/local',
+                PATH: `/usr/local/bin:${process.env.PATH}`
+            }
         });
 
         server.stdout.on('data', (data) => {
