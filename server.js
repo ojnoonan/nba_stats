@@ -7,12 +7,55 @@ const BACKEND_PORT = 7778;
 
 // Install required system packages
 function installSystemPackages() {
-    console.log('Installing Python packages from requirements.txt...');
+    console.log('Installing Python packages...');
+    const packages = [
+        'python3-fastapi',
+        'python3-sqlalchemy',
+        'python3-pydantic',
+        'python3-dotenv',
+        'python3-pandas',
+        'python3-aiohttp',
+        'python3-pytest',
+        'python3-httpx',
+        'python3-uvicorn',
+        'python3-apscheduler',
+        'python3-pip',  // We'll need pip for nba_api
+        'python3-venv'  // For creating virtual environment
+    ];
+
     try {
-        const requirementsPath = path.join(AMP_BASE_PATH, 'Application/backend/requirements.txt');
-        const pipResult = spawnSync('pip3', ['install', '--user', '-r', requirementsPath], { stdio: 'inherit' });
+        // Create a virtual environment for additional packages
+        const venvPath = path.join(AMP_BASE_PATH, 'venv');
+        console.log('Creating virtual environment...');
+        
+        // Update package list
+        console.log('Updating package list...');
+        const updateResult = spawnSync('apt-get', ['update'], { stdio: 'inherit' });
+        if (updateResult.error || updateResult.status !== 0) {
+            console.error('Failed to update package list');
+            return false;
+        }
+
+        // Install system packages
+        console.log('Installing system packages...');
+        const installResult = spawnSync('apt-get', ['install', '-y', ...packages], { stdio: 'inherit' });
+        if (installResult.error || installResult.status !== 0) {
+            console.error('Failed to install system packages');
+            return false;
+        }
+
+        // Create virtual environment
+        const venvResult = spawnSync('python3', ['-m', 'venv', venvPath], { stdio: 'inherit' });
+        if (venvResult.error || venvResult.status !== 0) {
+            console.error('Failed to create virtual environment');
+            return false;
+        }
+
+        // Install nba_api in the virtual environment
+        console.log('Installing nba_api in virtual environment...');
+        const pipResult = spawnSync(path.join(venvPath, 'bin', 'pip'), ['install', 'nba_api'], { stdio: 'inherit' });
         if (pipResult.error || pipResult.status !== 0) {
-            console.error('Failed to install Python packages');
+            console.error('Failed to install nba_api');
             return false;
         }
 
@@ -28,14 +71,17 @@ function installSystemPackages() {
 async function startBackend() {
     return new Promise((resolve, reject) => {
         console.log('Starting backend server...');
-        const server = spawn('python3', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', BACKEND_PORT.toString()], {
+        const venvPath = path.join(AMP_BASE_PATH, 'venv');
+        const pythonPath = path.join(venvPath, 'bin', 'python3');
+        
+        const server = spawn(pythonPath, ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', BACKEND_PORT.toString()], {
             cwd: path.join(AMP_BASE_PATH, 'Application/backend'),
             stdio: ['pipe', 'pipe', 'pipe'],
             env: {
                 ...process.env,
                 PYTHONPATH: `${path.join(AMP_BASE_PATH, 'Application/backend')}:/usr/lib/python3/dist-packages:/usr/local/lib/python3.11/dist-packages:/usr/lib/python3.11/dist-packages`,
-                PYTHONUSERBASE: '/usr/local',
-                PATH: `/usr/local/bin:${process.env.PATH}`,
+                PATH: `${path.join(venvPath, 'bin')}:${process.env.PATH}`,
+                VIRTUAL_ENV: venvPath,
                 HOST: '0.0.0.0'
             }
         });
