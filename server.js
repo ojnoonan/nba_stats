@@ -1,22 +1,26 @@
 const { spawn } = require('child_process');
 const path = require('path');
 
+const AMP_BASE_PATH = '/AMP/node-server/app';
+
 // Start the Python backend
 function startBackend() {
-    const backend = spawn('python3', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
-        cwd: path.join(__dirname, 'Application/backend')
-    });
+    const backend = spawn('python3', ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
+        cwd: path.join(AMP_BASE_PATH, 'Application/backend')
+    }).on('close', (code) => {
+        if (code === 0) {
+            const server = spawn('python3', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
+                cwd: path.join(AMP_BASE_PATH, 'Application/backend')
+            });
 
-    backend.stdout.on('data', (data) => {
-        console.log(`Backend stdout: ${data}`);
-    });
+            server.stdout.on('data', (data) => {
+                console.log(`Backend: ${data}`);
+            });
 
-    backend.stderr.on('data', (data) => {
-        console.error(`Backend stderr: ${data}`);
-    });
-
-    backend.on('close', (code) => {
-        console.log(`Backend process exited with code ${code}`);
+            server.stderr.on('data', (data) => {
+                console.error(`Backend error: ${data}`);
+            });
+        }
     });
 
     return backend;
@@ -25,20 +29,17 @@ function startBackend() {
 // Start the frontend
 function startFrontend() {
     const frontend = spawn('npm', ['run', 'preview', '--', '--port', '7779', '--host'], {
-        cwd: path.join(__dirname, 'Application/frontend'),
-        shell: true
+        cwd: path.join(AMP_BASE_PATH, 'Application/frontend'),
+        shell: true,
+        env: { ...process.env, NODE_ENV: 'production' }
     });
 
     frontend.stdout.on('data', (data) => {
-        console.log(`Frontend stdout: ${data}`);
+        console.log(`Frontend: ${data}`);
     });
 
     frontend.stderr.on('data', (data) => {
-        console.error(`Frontend stderr: ${data}`);
-    });
-
-    frontend.on('close', (code) => {
-        console.log(`Frontend process exited with code ${code}`);
+        console.error(`Frontend error: ${data}`);
     });
 
     return frontend;
