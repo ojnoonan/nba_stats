@@ -41,10 +41,11 @@ app = FastAPI(
 # Add CORS middleware with updated settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:7779"],  # Frontend URL
+    allow_origins=["*"],  # Allow all origins since we're behind a proxy
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Initialize database

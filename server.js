@@ -16,7 +16,8 @@ async function startBackend() {
                 ...process.env,
                 PYTHONPATH: `${path.join(AMP_BASE_PATH, 'Application/backend')}:/usr/lib/python3/dist-packages:/usr/local/lib/python3.11/dist-packages:/usr/lib/python3.11/dist-packages`,
                 PYTHONUSERBASE: '/usr/local',
-                PATH: `/usr/local/bin:${process.env.PATH}`
+                PATH: `/usr/local/bin:${process.env.PATH}`,
+                HOST: '0.0.0.0'
             }
         });
 
@@ -41,15 +42,15 @@ async function startBackend() {
 async function startFrontend() {
     return new Promise((resolve, reject) => {
         console.log('Starting frontend server...');
+        // Use relative path for proxy to work in Docker
         const frontend = spawn('npm', ['run', 'preview', '--', '--port', FRONTEND_PORT.toString(), '--host', '0.0.0.0'], {
             cwd: path.join(AMP_BASE_PATH, 'Application/frontend'),
             shell: true,
             env: { 
                 ...process.env, 
                 NODE_ENV: 'production',
-                VITE_BACKEND_URL: `http://0.0.0.0:${BACKEND_PORT}`,
-                PORT: FRONTEND_PORT.toString(),
-                HOST: '0.0.0.0'
+                HOST: '0.0.0.0',
+                PORT: FRONTEND_PORT.toString()
             }
         });
 
