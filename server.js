@@ -2,12 +2,14 @@ const { spawn } = require('child_process');
 const path = require('path');
 
 const AMP_BASE_PATH = '/AMP/node-server/app';
+const FRONTEND_PORT = 7779;
+const BACKEND_PORT = 8000;
 
 // Start the Python backend
 async function startBackend() {
     return new Promise((resolve, reject) => {
         console.log('Starting backend server...');
-        const server = spawn('python3', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
+        const server = spawn('python3', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', BACKEND_PORT.toString()], {
             cwd: path.join(AMP_BASE_PATH, 'Application/backend'),
             stdio: ['pipe', 'pipe', 'pipe'],
             env: {
@@ -39,10 +41,14 @@ async function startBackend() {
 async function startFrontend() {
     return new Promise((resolve, reject) => {
         console.log('Starting frontend server...');
-        const frontend = spawn('npm', ['run', 'preview', '--', '--port', '80', '--host'], {
+        const frontend = spawn('npm', ['run', 'preview', '--', '--port', FRONTEND_PORT.toString(), '--host'], {
             cwd: path.join(AMP_BASE_PATH, 'Application/frontend'),
             shell: true,
-            env: { ...process.env, NODE_ENV: 'production' }
+            env: { 
+                ...process.env, 
+                NODE_ENV: 'production',
+                VITE_API_URL: `http://localhost:${BACKEND_PORT}`
+            }
         });
 
         frontend.stdout.on('data', (data) => {
