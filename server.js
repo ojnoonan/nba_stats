@@ -47,7 +47,8 @@ async function startFrontend() {
             env: { 
                 ...process.env, 
                 NODE_ENV: 'production',
-                VITE_API_URL: `http://localhost:${BACKEND_PORT}`
+                VITE_BACKEND_URL: `http://localhost:${BACKEND_PORT}`,
+                VITE_USE_PROXY: 'true'
             }
         });
 

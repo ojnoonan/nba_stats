@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:7778'
+const API_BASE_URL = '/api'  // This will be proxied to the backend
 const RETRY_COUNT = 3
 const RETRY_DELAY = 1000 // 1 second
 const REQUEST_TIMEOUT = 15000 // 15 seconds

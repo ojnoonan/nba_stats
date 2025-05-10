@@ -12,7 +12,22 @@ export default defineConfig({
   css: {
     postcss: './postcss.config.cjs'
   },
-  define: {
-    'process.env.VITE_API_URL': JSON.stringify('http://localhost:7778')
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:7778',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
+      }
+    }
+  },
+  preview: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:7778',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
+      }
+    }
   }
 })
