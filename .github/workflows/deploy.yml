@@ -1,8 +1,16 @@
 name: Deploy to Home Server
 
 on:
-  push:
-    branches: [ "main", "master" ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
 
 jobs:
   deploy:

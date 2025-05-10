@@ -1,8 +1,13 @@
 name: CI/CD
 
 on:
-  push:
-    branches: [ "main", "master" ]
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: 'Run all tests'
+        required: true
+        default: true
+        type: boolean
   pull_request:
     branches: [ "main", "master" ]
 
