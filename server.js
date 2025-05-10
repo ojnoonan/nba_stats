@@ -19,33 +19,56 @@ function installSystemPackages() {
         'python3-httpx',
         'python3-uvicorn',
         'python3-apscheduler',
-        'python3-pip',  // We'll need pip for nba_api
-        'python3-venv'  // For creating virtual environment
+        'python3-pip',
+        'python3-venv'
     ];
 
     try {
-        // Create a virtual environment for additional packages
-        const venvPath = path.join(AMP_BASE_PATH, 'venv');
-        console.log('Creating virtual environment...');
-        
-        // Update package list
+        // Update package list with sudo
         console.log('Updating package list...');
-        const updateResult = spawnSync('apt-get', ['update'], { stdio: 'inherit' });
+        const updateResult = spawnSync('sudo', ['apt-get', 'update'], { 
+            stdio: 'inherit',
+            shell: true
+        });
         if (updateResult.error || updateResult.status !== 0) {
             console.error('Failed to update package list');
-            return false;
+            // Try without sudo as fallback
+            const nonSudoUpdateResult = spawnSync('apt-get', ['update'], { 
+                stdio: 'inherit',
+                shell: true
+            });
+            if (nonSudoUpdateResult.error || nonSudoUpdateResult.status !== 0) {
+                console.error('Failed to update package list without sudo');
+                return false;
+            }
         }
 
-        // Install system packages
+        // Install system packages with sudo
         console.log('Installing system packages...');
-        const installResult = spawnSync('apt-get', ['install', '-y', ...packages], { stdio: 'inherit' });
+        const installResult = spawnSync('sudo', ['apt-get', 'install', '-y', ...packages], { 
+            stdio: 'inherit',
+            shell: true
+        });
         if (installResult.error || installResult.status !== 0) {
-            console.error('Failed to install system packages');
-            return false;
+            console.error('Failed to install system packages with sudo');
+            // Try without sudo as fallback
+            const nonSudoInstallResult = spawnSync('apt-get', ['install', '-y', ...packages], { 
+                stdio: 'inherit',
+                shell: true
+            });
+            if (nonSudoInstallResult.error || nonSudoInstallResult.status !== 0) {
+                console.error('Failed to install system packages without sudo');
+                return false;
+            }
         }
 
         // Create virtual environment
-        const venvResult = spawnSync('python3', ['-m', 'venv', venvPath], { stdio: 'inherit' });
+        const venvPath = path.join(AMP_BASE_PATH, 'venv');
+        console.log('Creating virtual environment...');
+        const venvResult = spawnSync('python3', ['-m', 'venv', venvPath], { 
+            stdio: 'inherit',
+            shell: true
+        });
         if (venvResult.error || venvResult.status !== 0) {
             console.error('Failed to create virtual environment');
             return false;
@@ -53,7 +76,10 @@ function installSystemPackages() {
 
         // Install nba_api in the virtual environment
         console.log('Installing nba_api in virtual environment...');
-        const pipResult = spawnSync(path.join(venvPath, 'bin', 'pip'), ['install', 'nba_api'], { stdio: 'inherit' });
+        const pipResult = spawnSync(path.join(venvPath, 'bin', 'pip'), ['install', 'nba_api'], { 
+            stdio: 'inherit',
+            shell: true
+        });
         if (pipResult.error || pipResult.status !== 0) {
             console.error('Failed to install nba_api');
             return false;
