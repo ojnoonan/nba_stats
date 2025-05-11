@@ -1,26 +1,18 @@
-FROM node:18.17.1-alpine3.18 as builder
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Copy only package files first
+# Install dependencies first (better caching)
 COPY package.json package-lock.json ./
+RUN npm install --legacy-peer-deps
 
-# Install only production dependencies
-RUN npm ci --only=production
-
-# Copy source files
+# Copy source and build
 COPY . .
-
-# Install dev dependencies needed for build
-RUN npm install --only=dev
-
-# Build
 RUN npm run build
 
-# Use a clean image for production
+# Serve with nginx
 FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-
 EXPOSE 7779
 CMD ["nginx", "-g", "daemon off;"]
