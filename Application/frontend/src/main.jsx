@@ -9,10 +9,16 @@ const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       retry: 1,
-      staleTime: 1000 * 60 * 60 * 24, // 24 hours
-      cacheTime: 1000 * 60 * 60 * 24, // 24 hours
+      staleTime: 1000 * 30, // 30 seconds
+      cacheTime: 1000 * 60 * 5, // 5 minutes
     },
   },
+})
+
+// Configure global query behaviors
+queryClient.setQueryDefaults(['status'], {
+  refetchInterval: 5000, // Poll every 5 seconds
+  refetchIntervalInBackground: true,
 })
 
 createRoot(document.getElementById('root')).render(

@@ -50,8 +50,7 @@ const HomePage = () => {
     refetch: refetchStatus
   } = useQuery({
     queryKey: ['status'],
-    queryFn: fetchStatus,
-    refetchInterval: 5000 // Poll every 5 seconds while component is mounted
+    queryFn: fetchStatus
   })
 
   const handleCancelUpdate = async () => {
