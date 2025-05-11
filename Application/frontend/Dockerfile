@@ -8,8 +8,9 @@ RUN apk add --no-cache python3 make g++ gcc git
 # Copy package files
 COPY package*.json ./
 
-# Clean install dependencies with legacy peer deps
-RUN npm clean-install --legacy-peer-deps
+# Clear npm cache and install dependencies with specific flags
+RUN npm cache clean --force && \
+    npm install --no-optional --legacy-peer-deps
 
 # Copy the rest of the application
 COPY . .
@@ -22,8 +23,12 @@ RUN npm run build
 
 # Production stage
 FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy built assets from build stage
+COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 7779
 

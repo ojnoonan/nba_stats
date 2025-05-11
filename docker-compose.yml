@@ -18,7 +18,6 @@ services:
       dockerfile: Dockerfile
     environment:
       - NODE_ENV=production
-      - VITE_API_BASE_URL=http://backend:7778
     ports:
       - "7779:7779"
     depends_on:
