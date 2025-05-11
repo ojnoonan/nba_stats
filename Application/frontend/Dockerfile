@@ -1,31 +1,23 @@
-FROM node:18.19-alpine3.18 AS build
+FROM node:18-alpine
 
 WORKDIR /app
-
-# Add necessary build tools
-RUN apk add --no-cache python3 make g++
 
 # Copy package files
 COPY package*.json ./
 
-# Clean install dependencies
-RUN npm ci
+# Install dependencies
+RUN npm install
 
 # Copy application files
 COPY . .
 
-# Build application
-RUN NODE_ENV=production CI=true npm run build
+# Build the app
+RUN npm run build
 
-# Production stage
-FROM nginx:alpine
-
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Copy built assets
-COPY --from=build /app/dist /usr/share/nginx/html
+# Install serve
+RUN npm install -g serve
 
 EXPOSE 7779
 
-CMD ["nginx", "-g", "daemon off;"]
+# Start the app
+CMD ["serve", "-s", "dist", "-l", "7779"]
