@@ -1,5 +1,5 @@
 // Always use the current URL port for API requests
-const API_BASE_URL = window.location.port ? `${window.location.protocol}//${window.location.hostname}:${window.location.port}` : ''
+const API_BASE_URL = window.location.port ? `${window.location.protocol}//${window.location.hostname}:${window.location.port}` : `${window.location.protocol}//${window.location.hostname}`
 
 const RETRY_COUNT = 3
 const RETRY_DELAY = 1000
