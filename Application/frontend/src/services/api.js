@@ -153,7 +153,6 @@ export const triggerUpdate = async (types = null) => {
       method: 'POST'
     }
     
-    // If specific types are provided, add them to request body
     if (types && types.length > 0) {
       options.headers = {
         'Content-Type': 'application/json'
