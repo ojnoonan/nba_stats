@@ -628,7 +628,11 @@ class NBADataService:
                 status = DataUpdateStatus()
                 self.db.add(status)
             
-            if status.is_updating:
+            # Check if this is initial data load
+            team_count = self.db.query(Team).count()
+            is_initial_load = team_count == 0
+
+            if status.is_updating and not is_initial_load:
                 logger.warning("Update already in progress")
                 return False
 
@@ -637,53 +641,41 @@ class NBADataService:
             status.current_phase = 'cleanup'
             status.last_error = None
             status.last_error_time = None
+            status.teams_updated = False
+            status.players_updated = False
+            status.games_updated = False
             self.db.commit()
             
             try:
                 # First clean up old season data
-                await self.cleanup_old_seasons()
+                if not is_initial_load:
+                    await self.cleanup_old_seasons()
                 
-                # Check if teams need updating (every 6 hours)
-                teams_need_update = not status.teams_updated or \
-                    (status.last_successful_update and 
-                     datetime.utcnow() - status.last_successful_update > timedelta(hours=6))
-                
-                if teams_need_update:
-                    status.current_phase = 'teams'
-                    status.teams_updated = False
-                    self.db.commit()
-                    await self.update_teams()
-                    status.teams_updated = True
-                    self.db.commit()
-                else:
-                    logger.info("Teams are up to date, skipping teams update")
-                
-                # Update players for each team that needs updating
+                # Always update teams on initial load
+                status.current_phase = 'teams'
+                self.db.commit()
+                await self.update_teams()
+                status.teams_updated = True
+                self.db.commit()
+
+                # Update players for each team
                 status.current_phase = 'players'
-                status.players_updated = False
                 self.db.commit()
                 
-                teams_query = self.db.query(Team)
-                if status.last_successful_update:
-                    teams_query = teams_query.filter(
-                        (Team.last_updated == None) |
-                        (Team.last_updated <= datetime.utcnow() - timedelta(hours=6))
-                    )
-                
-                for team in teams_query.all():
+                teams = self.db.query(Team).all()
+                for team in teams:
                     await self.update_team_players(team.team_id)
                 
                 status.players_updated = True
                 
-                # Update games and stats (this should run each time to get latest scores)
+                # Update games and stats
                 status.current_phase = 'games'
-                status.games_updated = False
                 self.db.commit()
                 await self.update_games()
                 status.games_updated = True
-                status.current_phase = None
                 
                 # Update the final status
+                status.current_phase = None
                 status.last_successful_update = datetime.utcnow()
                 status.next_scheduled_update = datetime.utcnow() + timedelta(hours=6)
                 status.is_updating = False
@@ -701,7 +693,6 @@ class NBADataService:
                 raise e
                 
         except Exception as e:
-            # If anything fails during status update, try one last time to set is_updating to False
             try:
                 status = self.db.query(DataUpdateStatus).first()
                 if status:
