@@ -98,7 +98,7 @@ export const fetchPlayerStats = async (playerId, limit = null) => {
     const params = new URLSearchParams()
     if (limit) params.append('limit', limit)
     
-    return await fetchWithRetry(`${API_BASE_URL}/players/${playerId}/stats${params.toString() ? `?${params}` : ''}`)
+    return await fetchWithRetry(`${API_BASE_URL}/players/${playerId}/stats?${params}`)
   } catch (error) {
     console.error('Failed to fetch player stats:', error)
     throw new Error('Failed to fetch player stats')

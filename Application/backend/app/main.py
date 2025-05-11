@@ -26,9 +26,10 @@ def get_nba_service():
     """Get an instance of the NBA data service with a database session"""
     db = SessionLocal()
     try:
-        yield NBADataService(db)
-    finally:
+        return NBADataService(db)
+    except Exception as e:
         db.close()
+        raise e
 
 # Create FastAPI app
 app = FastAPI(
@@ -37,21 +38,14 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Add CORS middleware with specific allowed origins
-allowed_origins = [
-    "http://localhost:7779",
-    "http://127.0.0.1:7779",
-    "http://192.168.1.89:7779",  # Add your local IP
-    "http://192.168.1.89"        # Add your local IP without port
-]
-
+# Add CORS middleware with updated settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=["*"],  # Allow all origins since we're behind a proxy
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Length", "Content-Range"]
+    expose_headers=["*"]
 )
 
 # Initialize database

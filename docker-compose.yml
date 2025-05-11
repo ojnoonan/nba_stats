@@ -8,26 +8,17 @@ services:
     container_name: nba_stats_backend
     restart: unless-stopped
     ports:
-      - "7778:7778"
+      - "0.0.0.0:7778:7778"
     volumes:
-      - nba_stats_data:/app/data:rw
+      - nba_stats_data:/app/data
     environment:
       - HOST=0.0.0.0
-      - DATABASE_URL=sqlite:///app/data/nba_stats.db
+      - NBA_STATS_DATA_DIR=/app/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7778/status"]
       interval: 30s
       timeout: 10s
       retries: 3
-    security_opt:
-      - no-new-privileges:true
-    read_only: false
-    tmpfs:
-      - /tmp
-    logging:
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   frontend:
     build:
@@ -36,28 +27,16 @@ services:
     container_name: nba_stats_frontend
     restart: unless-stopped
     ports:
-      - "7779:7779"
+      - "0.0.0.0:7779:7779"
     environment:
       - VITE_API_URL=/api
-      - NODE_ENV=production
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7779/"]
+      test: ["CMD", "curl", "-f", "http://localhost:7779"]
       interval: 30s
       timeout: 10s
       retries: 3
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /var/cache/nginx
-    logging:
-      options:
-        max-size: "10m"
-        max-file: "3"
 
 volumes:
   nba_stats_data:

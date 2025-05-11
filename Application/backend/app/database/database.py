@@ -4,12 +4,11 @@ from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager, asynccontextmanager
 import os
 
-# Allow overriding data directory through environment variable
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_DIR = os.getenv('NBA_STATS_DATA_DIR', os.path.join(BASE_DIR, "data"))
+# Use environment variable with fallback for data directory
+DATA_DIR = os.getenv('NBA_STATS_DATA_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data'))
 os.makedirs(DATA_DIR, exist_ok=True)
 
-SQLALCHEMY_DATABASE_URL = os.getenv('DATABASE_URL', f"sqlite:///{os.path.join(DATA_DIR, 'nba_stats.db')}")
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/nba_stats.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}

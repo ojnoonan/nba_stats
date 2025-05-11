@@ -30,7 +30,7 @@ const PlayersPage = () => {
 
   const { data: playerStats, isLoading: statsLoading } = useQuery({
     queryKey: ['playerStats', id],
-    queryFn: () => fetchPlayerStats(id, 20), // Limit to 20 most recent games
+    queryFn: () => fetchPlayerStats(id),
     enabled: !!id
   })
 
