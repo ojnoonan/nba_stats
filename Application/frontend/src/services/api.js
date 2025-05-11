@@ -1,5 +1,10 @@
-// Construct base URL using current origin
-const API_BASE_URL = window.location.origin.includes(':7779') ? '' : window.location.protocol + '//' + window.location.hostname + ':7779'
+// Get the current location's origin with port
+const currentOrigin = window.location.origin.includes(':7779') ? 
+  window.location.origin : 
+  `${window.location.protocol}//${window.location.hostname}:7779`;
+
+const API_BASE_URL = currentOrigin;  // Use full origin to prevent redirects
+
 const RETRY_COUNT = 3
 const RETRY_DELAY = 1000
 const REQUEST_TIMEOUT = 15000
