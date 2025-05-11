@@ -11,13 +11,20 @@ services:
       - nba_network
 
   frontend:
-    build: ./Application/frontend
+    build: 
+      context: ./Application/frontend
+      dockerfile: Dockerfile
     ports:
       - "7779:7779"
     depends_on:
       - backend
     networks:
       - nba_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
 
 networks:
   nba_network:

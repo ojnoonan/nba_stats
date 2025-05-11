@@ -1,21 +1,29 @@
-FROM node:18-alpine as dependencies
+FROM node:18-alpine
 
 WORKDIR /app
+
+# Install build essentials
+RUN apk add --no-cache python3 make g++
+
+# Copy package files
 COPY package*.json ./
-RUN npm install --prefer-offline --no-audit
 
-FROM node:18-alpine as builder
+# Install dependencies with verbose logging
+RUN npm install --verbose
 
-WORKDIR /app
-COPY --from=dependencies /app/node_modules ./node_modules
+# Copy application files
 COPY . .
-RUN npm run build
 
-FROM node:18-alpine as runner
+# Set environment variable for more verbose logging
+ENV NODE_ENV=development
+ENV DEBUG=*
 
-WORKDIR /app
+# Run build with max logging
+RUN set -x && npm run build || (echo "Build failed with exit code $?" && ls -la && cat npm-debug.log* 2>/dev/null || true && exit 1)
+
+# Install serve
 RUN npm install -g serve
-COPY --from=builder /app/dist ./dist
 
 EXPOSE 7779
+
 CMD ["serve", "-s", "dist", "-l", "7779", "--no-clipboard"]
