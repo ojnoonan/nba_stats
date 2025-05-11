@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.PROD ? 'http://192.168.1.89:7778' : 'http://localhost:7778'
+const API_BASE_URL = ''  // Use relative paths in production
 const RETRY_COUNT = 3
 const RETRY_DELAY = 1000
 const REQUEST_TIMEOUT = 15000
