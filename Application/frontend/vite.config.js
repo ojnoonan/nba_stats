@@ -10,7 +10,7 @@ export default defineConfig({
     }
   },
   css: {
-    postcss: './postcss.config.cjs'
+    postcss: 'postcss.config.cjs'
   },
   server: {
     port: 7779,
@@ -28,11 +28,18 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: true,
+    minify: 'terser',
     rollupOptions: {
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom']
         }
+      }
+    },
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true
       }
     }
   }
