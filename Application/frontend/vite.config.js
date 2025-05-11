@@ -12,13 +12,28 @@ export default defineConfig({
   css: {
     postcss: './postcss.config.cjs'
   },
-  preview: {
+  server: {
     port: 7779,
     proxy: {
-      '^/(?!assets).*': {
+      '/api': {
         target: 'http://localhost:7778',
         changeOrigin: true,
-        secure: false
+        rewrite: (path) => path.replace(/^\/api/, '')
+      }
+    }
+  },
+  preview: {
+    port: 7779
+  },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom']
+        }
       }
     }
   }

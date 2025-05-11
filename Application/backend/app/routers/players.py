@@ -49,6 +49,7 @@ async def get_player(player_id: int, db: Session = Depends(get_db)):
 @router.get("/{player_id}/stats")
 async def get_player_stats(
     player_id: int,
+    limit: Optional[int] = Query(None, ge=1),
     db: Session = Depends(get_db)
 ):
     """Get all game statistics for a player"""
@@ -59,11 +60,15 @@ async def get_player_stats(
             raise HTTPException(status_code=404, detail="Player not found")
             
         # Get all stats with game info
-        stats = (db.query(PlayerGameStats, GameModel)
+        query = (db.query(PlayerGameStats, GameModel)
                 .join(GameModel, PlayerGameStats.game_id == GameModel.game_id)
                 .filter(PlayerGameStats.player_id == player_id)
-                .order_by(GameModel.game_date_utc.desc())
-                .all())
+                .order_by(GameModel.game_date_utc.desc()))
+        
+        if limit:
+            query = query.limit(limit)
+                
+        stats = query.all()
                 
         # Return stats with game dates
         result = []

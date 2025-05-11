@@ -1,39 +1,50 @@
-const API_BASE_URL = ''  // Direct requests without /api prefix
+const API_BASE_URL = import.meta.env.PROD ? '/api' : 'http://localhost:7778'
 const RETRY_COUNT = 3
-const RETRY_DELAY = 1000 // 1 second
-const REQUEST_TIMEOUT = 15000 // 15 seconds
+const RETRY_DELAY = 1000
+const REQUEST_TIMEOUT = 15000
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+class ApiError extends Error {
+  constructor(message, status) {
+    super(message)
+    this.status = status
+    this.name = 'ApiError'
+  }
+}
 
 const fetchWithRetry = async (url, options = {}) => {
   let lastError
   
   for (let i = 0; i < RETRY_COUNT; i++) {
     try {
-      console.log(`Fetching ${url}...`)
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
       
       const response = await fetch(url, {
         ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
         signal: controller.signal
       })
       
       clearTimeout(timeoutId)
       
       if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`)
+        throw new ApiError(`HTTP error: ${response.status}`, response.status)
       }
       
       const data = await response.json()
-      console.log(`Response from ${url}:`, data)
       return data
     } catch (error) {
-      console.error(`Error fetching ${url}:`, error)
       lastError = error
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        throw error // Don't retry client errors
+      }
       if (i < RETRY_COUNT - 1) {
-        console.log(`Retrying ${url} in ${RETRY_DELAY * Math.pow(2, i)}ms...`)
-        await sleep(RETRY_DELAY * Math.pow(2, i)) // Exponential backoff
+        await sleep(RETRY_DELAY * Math.pow(2, i))
         continue
       }
     }
@@ -87,7 +98,7 @@ export const fetchPlayerStats = async (playerId, limit = null) => {
     const params = new URLSearchParams()
     if (limit) params.append('limit', limit)
     
-    return await fetchWithRetry(`${API_BASE_URL}/players/${playerId}/stats?${params}`)
+    return await fetchWithRetry(`${API_BASE_URL}/players/${playerId}/stats${params.toString() ? `?${params}` : ''}`)
   } catch (error) {
     console.error('Failed to fetch player stats:', error)
     throw new Error('Failed to fetch player stats')

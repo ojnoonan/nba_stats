@@ -8,16 +8,35 @@ services:
     container_name: nba_stats_backend
     restart: unless-stopped
     ports:
-      - "0.0.0.0:7778:7778"
+      - "127.0.0.1:7778:7778"  # Only bind to localhost
     volumes:
-      - nba_stats_data:/app/data
+      - nba_stats_data:/app/data:rw
     environment:
       - HOST=0.0.0.0
+      - DATABASE_URL=sqlite:///app/data/nba_stats.db
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7778/api/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:7778/status"]
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # Allow write access
+    tmpfs:
+      - /tmp
+      - /app/data  # Temporary storage for database and other runtime files
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     build:
@@ -26,16 +45,36 @@ services:
     container_name: nba_stats_frontend
     restart: unless-stopped
     ports:
-      - "0.0.0.0:7779:7779"
+      - "127.0.0.1:7779:7779"  # Only bind to localhost
     environment:
       - VITE_API_URL=/api
+      - NODE_ENV=production
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7779"]
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.30'
+          memory: 256M
+        reservations:
+          cpus: '0.15'
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+    read_only: true  # Frontend can remain read-only
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   nba_stats_data:
