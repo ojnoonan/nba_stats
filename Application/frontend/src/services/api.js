@@ -20,10 +20,11 @@ const fetchWithRetry = async (url, options = {}) => {
   
   for (let i = 0; i < RETRY_COUNT; i++) {
     try {
+      const cleanUrl = url.replace(/\/+$/, '')
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
       
-      const response = await fetch(url, {
+      const response = await fetch(cleanUrl, {
         ...options,
         headers: {
           'Content-Type': 'application/json',
@@ -79,7 +80,8 @@ export const fetchPlayers = async (teamId = null, activeOnly = true) => {
     if (teamId) params.append('team_id', teamId)
     if (activeOnly) params.append('active_only', activeOnly)
     
-    return await fetchWithRetry(`${API_BASE_URL}/players?${params}`)
+    const url = `${API_BASE_URL}/players${params.toString() ? `?${params}` : ''}`
+    return await fetchWithRetry(url)
   } catch (error) {
     console.error('Failed to fetch players:', error)
     throw new Error('Failed to fetch players')
@@ -100,7 +102,8 @@ export const fetchPlayerStats = async (playerId, limit = null) => {
     const params = new URLSearchParams()
     if (limit) params.append('limit', limit)
     
-    return await fetchWithRetry(`${API_BASE_URL}/players/${playerId}/stats?${params}`)
+    const url = `${API_BASE_URL}/players/${playerId}/stats${params.toString() ? `?${params}` : ''}`
+    return await fetchWithRetry(url)
   } catch (error) {
     console.error('Failed to fetch player stats:', error)
     throw new Error('Failed to fetch player stats')
@@ -114,7 +117,8 @@ export const fetchGames = async (teamId = null, status = null, playerId = null) 
     if (status) params.append('status', status)
     if (playerId) params.append('player_id', playerId)
     
-    return await fetchWithRetry(`${API_BASE_URL}/games?${params}`)
+    const url = `${API_BASE_URL}/games${params.toString() ? `?${params}` : ''}`
+    return await fetchWithRetry(url)
   } catch (error) {
     console.error('Failed to fetch games:', error)
     throw new Error('Failed to fetch games')

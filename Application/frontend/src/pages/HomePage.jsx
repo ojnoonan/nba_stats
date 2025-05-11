@@ -25,7 +25,7 @@ const HomePage = () => {
   } = useQuery({
     queryKey: ['teams'],
     queryFn: fetchTeams,
-    staleTime: 1000 * 60 * 5 // 5 minutes
+    suspense: true
   })
 
   const { 
@@ -35,7 +35,7 @@ const HomePage = () => {
   } = useQuery({
     queryKey: ['players'],
     queryFn: () => fetchPlayers(null, true),
-    staleTime: 1000 * 60 * 5 // 5 minutes
+    suspense: true
   })
 
   const { 
@@ -45,7 +45,7 @@ const HomePage = () => {
   } = useQuery({
     queryKey: ['games'],
     queryFn: () => fetchGames(),
-    staleTime: 1000 * 60 * 5 // 5 minutes
+    suspense: true
   })
 
   const {
@@ -53,10 +53,24 @@ const HomePage = () => {
     refetch: refetchStatus
   } = useQuery({
     queryKey: ['status'],
-    queryFn: fetchStatus,
-    refetchInterval: 30000, // Poll every 30 seconds
-    refetchIntervalInBackground: false // Don't poll when tab is not active
+    queryFn: fetchStatus
   })
+
+  const handleRefreshAll = async () => {
+    try {
+      await Promise.all([
+        triggerTeamsUpdate(),
+        triggerPlayersUpdate(),
+        triggerGamesUpdate()
+      ])
+      // Invalidate all queries at once
+      await queryClient.invalidateQueries({
+        queryKey: [['teams'], ['players'], ['games'], ['status']]
+      })
+    } catch (error) {
+      console.error('Error refreshing data:', error)
+    }
+  }
 
   const handleCancelUpdate = async () => {
     try {
@@ -64,31 +78,6 @@ const HomePage = () => {
       queryClient.invalidateQueries({ queryKey: ['status'] })
     } catch (error) {
       console.error('Error canceling update:', error)
-    }
-  }
-
-  const handleRefresh = async (section) => {
-    try {
-      // Trigger the appropriate update based on section
-      switch (section) {
-        case 'teams':
-          await triggerTeamsUpdate()
-          await refetchTeams()
-          break
-        case 'players':
-          await triggerPlayersUpdate()
-          await refetchPlayers()
-          break
-        case 'games':
-          await triggerGamesUpdate()
-          await refetchGames()
-          break
-      }
-      
-      // Always refetch status after any update
-      await refetchStatus()
-    } catch (error) {
-      console.error('Error refreshing data:', error)
     }
   }
 
@@ -159,7 +148,7 @@ const HomePage = () => {
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => handleRefresh(section.refreshKey)}
+                onClick={() => handleRefreshAll()}
                 disabled={status?.is_updating}
               >
                 {section.isLoading || section.isRefetching ? (

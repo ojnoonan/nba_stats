@@ -54,7 +54,9 @@ async def background_data_update(update_types: Optional[List[str]] = None):
 app = FastAPI(
     title="NBA Stats API",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    # Disable automatic redirect for trailing slashes
+    redirect_slashes=False
 )
 
 # Add CORS middleware
@@ -64,6 +66,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Allow following redirects
+    expose_headers=["location"]
 )
 
 # Include routers
