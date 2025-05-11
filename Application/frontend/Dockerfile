@@ -1,28 +1,22 @@
-FROM node:18.17-alpine AS builder
+FROM node:16-alpine
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apk add --no-cache python3 make g++ git
-
-# Copy package files first
+# Copy package files
 COPY package*.json ./
 
 # Install dependencies
 RUN npm install
 
-# Copy rest of the application
+# Copy the rest of the application
 COPY . .
 
-# Set production environment and build
-ENV NODE_ENV=production
+# Build the application
 RUN npm run build
 
-# Production stage with nginx
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Install serve to serve the static files
+RUN npm install -g serve
 
 EXPOSE 7779
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["serve", "-s", "dist", "-l", "7779"]

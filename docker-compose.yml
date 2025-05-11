@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    build:
-      context: ./Application/backend
-      dockerfile: Dockerfile
+    build: ./Application/backend
     ports:
       - "7778:7778"
     volumes:
@@ -13,19 +11,13 @@ services:
       - nba_network
 
   frontend:
-    build:
-      context: ./Application/frontend
-      dockerfile: Dockerfile
-      args:
-        - BUILDKIT_INLINE_CACHE=1
+    build: ./Application/frontend
     ports:
       - "7779:7779"
     depends_on:
       - backend
     networks:
       - nba_network
-    environment:
-      - NODE_ENV=production
 
 networks:
   nba_network:
