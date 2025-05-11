@@ -9,6 +9,8 @@ services:
       - "7778:7778"
     volumes:
       - nba_stats_data:/app/data
+    networks:
+      - nba_network
 
   frontend:
     build:
@@ -21,6 +23,14 @@ services:
         - NPM_CONFIG_LOGLEVEL=verbose
     ports:
       - "7779:7779"
+    depends_on:
+      - backend
+    networks:
+      - nba_network
+
+networks:
+  nba_network:
+    driver: bridge
 
 volumes:
   nba_stats_data:
