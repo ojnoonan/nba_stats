@@ -1,29 +1,26 @@
-FROM node:18-alpine
+FROM node:18.17.1-alpine3.18
 
 WORKDIR /app
 
-# Install build essentials
-RUN apk add --no-cache python3 make g++
+# Copy only package files first
+COPY package.json package-lock.json ./
 
-# Copy package files
-COPY package*.json ./
+# Install only production dependencies
+RUN npm ci --only=production
 
-# Install dependencies with verbose logging
-RUN npm install --verbose
-
-# Copy application files
+# Copy source files
 COPY . .
 
-# Set environment variable for more verbose logging
-ENV NODE_ENV=development
-ENV DEBUG=*
+# Install dev dependencies needed for build
+RUN npm install --only=dev
 
-# Run build with max logging
-RUN set -x && npm run build || (echo "Build failed with exit code $?" && ls -la && cat npm-debug.log* 2>/dev/null || true && exit 1)
+# Build
+RUN npm run build
 
-# Install serve
-RUN npm install -g serve
+# Use a clean image for production
+FROM nginx:alpine
+COPY --from=0 /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 7779
-
-CMD ["serve", "-s", "dist", "-l", "7779", "--no-clipboard"]
+CMD ["nginx", "-g", "daemon off;"]
