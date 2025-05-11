@@ -3,41 +3,22 @@ version: '3.8'
 services:
   backend:
     build: ./Application/backend
-    pull_policy: build
     container_name: nba_stats_backend
-    restart: unless-stopped
     ports:
-      - "0.0.0.0:7778:7778"
+      - "7778:7778"
     volumes:
       - nba_stats_data:/app/data
     environment:
       - HOST=0.0.0.0
       - NBA_STATS_DATA_DIR=/app/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7778/status"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
   frontend:
     build: ./Application/frontend
-    pull_policy: build
     container_name: nba_stats_frontend
-    restart: unless-stopped
     ports:
-      - "0.0.0.0:7779:7779"
-    environment:
-      - NODE_ENV=production
-      - NODE_OPTIONS=--max_old_space_size=4096
+      - "7779:7779"
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
 
 volumes:
   nba_stats_data:
-    name: nba_stats_data
-
-networks:
-  default:
-    name: nba_stats_network
