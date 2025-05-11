@@ -1,17 +1,24 @@
-version: '3'
+version: '3.8'
 
 services:
   backend:
-    build: ./Application/backend
-    container_name: nba_stats_backend
+    build:
+      context: ./Application/backend
+      dockerfile: Dockerfile
     ports:
       - "7778:7778"
     volumes:
       - nba_stats_data:/app/data
 
   frontend:
-    build: ./Application/frontend
-    container_name: nba_stats_frontend
+    build:
+      context: ./Application/frontend
+      dockerfile: Dockerfile
+      args:
+        - DOCKER_BUILDKIT=1
+        - NODE_ENV=production
+        - NPM_CONFIG_LEGACY_PEER_DEPS=true
+        - NPM_CONFIG_LOGLEVEL=verbose
     ports:
       - "7779:7779"
 
