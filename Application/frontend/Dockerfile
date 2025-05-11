@@ -2,15 +2,25 @@ FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Install dependencies first
+# Add necessary build tools
+RUN apk add --no-cache python3 make g++
+
+# Copy package files
 COPY package*.json ./
-RUN npm install --legacy-peer-deps postcss-import
+
+# Install dependencies with clean npm cache
+RUN npm cache clean --force && \
+    npm ci
 
 # Copy rest of the app
 COPY . .
 
-# Build
-RUN NODE_ENV=production npm run build
+# Set environment variables for build
+ENV NODE_ENV=production
+ENV VITE_API_URL=http://backend:7778
+
+# Build the application
+RUN npm run build
 
 # Production stage
 FROM nginx:alpine
