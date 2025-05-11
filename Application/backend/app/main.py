@@ -16,7 +16,7 @@ from app.routers import teams, players, games, search
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     stream=sys.stdout
 )
@@ -30,31 +30,6 @@ def get_nba_service():
     except Exception as e:
         db.close()
         raise e
-
-# Create FastAPI app
-app = FastAPI(
-    title="NBA Stats API",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
-
-# Add CORS middleware with updated settings
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://192.168.1.89:7779", "http://localhost:7779"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"]
-)
-
-# Initialize database
-try:
-    init_db()
-    logger.info("Database initialized successfully")
-except Exception as e:
-    logger.error(f"Error initializing database: {str(e)}")
-    raise
 
 async def background_data_update(update_types: Optional[List[str]] = None):
     """Background task to update NBA data"""
@@ -75,55 +50,56 @@ async def background_data_update(update_types: Optional[List[str]] = None):
         logger.error(f"Error in background data update: {str(e)}")
         raise
 
-# Initialize scheduler and data
-@app.on_event("startup")
-async def startup_event():
-    try:
-        # Create initial status record if it doesn't exist
-        db = next(get_db())
-        try:
-            status = db.query(DataUpdateStatus).first()
-            if not status:
-                status = DataUpdateStatus(
-                    is_updating=False,
-                    current_phase=None,
-                    last_successful_update=None,
-                    next_scheduled_update=datetime.utcnow() + timedelta(hours=6)
-                )
-                db.add(status)
-                db.commit()
+# Create FastAPI app
+app = FastAPI(
+    title="NBA Stats API",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
-            # Check if we need to do initial data load
-            teams_count = db.query(Team).count()
-            if teams_count == 0:
-                logger.info("No teams found in database. Starting initial data load...")
-                background_tasks = BackgroundTasks()
-                background_tasks.add_task(background_data_update)
-                status.is_updating = True
-                status.current_phase = 'initializing'
-                db.commit()
-                
-        except Exception as e:
-            logger.error(f"Error creating initial status: {str(e)}")
-        finally:
-            db.close()
-            
-        # Try to start the scheduler if available
-        try:
-            from app.services.scheduler import start_scheduler
-            scheduler = start_scheduler()
-            logger.info("Scheduler started successfully")
-        except ImportError:
-            logger.warning("Scheduler not available - automatic updates disabled")
-        
-    except Exception as e:
-        logger.error(f"Error during startup: {str(e)}")
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include routers
 app.include_router(teams.router)
 app.include_router(players.router)
 app.include_router(games.router)
 app.include_router(search.router)
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database and start scheduler on startup"""
+    try:
+        # Initialize database
+        init_db()
+        logger.info("Database initialized successfully")
+        
+        # Check if we need initial data load
+        db = SessionLocal()
+        try:
+            team_count = db.query(Team).count()
+            if team_count == 0:
+                logger.info("No teams found in database. Starting initial data load...")
+                background_tasks = BackgroundTasks()
+                background_tasks.add_task(background_data_update)
+                await background_data_update()
+        finally:
+            db.close()
+            
+        # Start the scheduler
+        from app.services.scheduler import start_scheduler
+        scheduler = start_scheduler()
+        logger.info("Scheduler started successfully")
+        
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+        raise
 
 @app.get("/")
 async def root():
@@ -161,34 +137,13 @@ async def get_status(db: Session = Depends(get_db)):
 @app.post("/update")
 async def trigger_update(
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
     update_types: List[str] = Body(default=None, embed=True)
 ):
-    """
-    Trigger a data update. Can specify which types of data to update.
-    Valid update_types: ["teams", "players", "games"]
-    If no types specified, updates everything.
-    """
+    """Trigger a data update"""
     try:
-        status = db.query(DataUpdateStatus).first()
-        if status and status.is_updating:
-            raise HTTPException(status_code=400, detail="Update already in progress")
-        
-        if update_types:
-            valid_types = {"teams", "players", "games"}
-            invalid_types = set(update_types) - valid_types
-            if invalid_types:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Invalid update types: {invalid_types}. Valid types are: {valid_types}"
-                )
-            
         background_tasks.add_task(background_data_update, update_types)
-        return {"message": f"Update initiated for: {update_types if update_types else 'all data'}"}
-    except HTTPException:
-        raise
+        return {"message": "Update initiated"}
     except Exception as e:
-        logger.error(f"Error triggering update: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/reset-update-status")

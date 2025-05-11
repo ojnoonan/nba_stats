@@ -910,3 +910,47 @@ class NBADataService:
             logger.error(f"Error in cleanup_old_seasons: {str(e)}")
             self.db.rollback()
             raise
+
+    async def _process_player_stats(self, player_data: dict, game_id: str):
+        """Process and store player statistics for a game"""
+        try:
+            # Convert minutes played to total minutes
+            minutes_str = player_data.get('MIN', '0')
+            if ':' in minutes_str:  # Format like "32:45"
+                minutes, seconds = map(int, minutes_str.split(':'))
+                total_minutes = minutes + (seconds / 60)
+            else:
+                total_minutes = float(minutes_str)
+
+            # Create or update player game stats
+            stats = PlayerGameStats(
+                game_id=game_id,
+                player_id=player_data['PLAYER_ID'],
+                team_id=player_data['TEAM_ID'],
+                minutes_played=total_minutes,
+                points=player_data['PTS'],
+                rebounds=player_data['REB'],
+                assists=player_data['AST'],
+                steals=player_data['STL'],
+                blocks=player_data['BLK'],
+                field_goals_made=player_data['FGM'],
+                field_goals_attempted=player_data['FGA'],
+                field_goal_percentage=player_data['FG_PCT'],
+                three_pointers_made=player_data['FG3M'],
+                three_pointers_attempted=player_data['FG3A'],
+                three_point_percentage=player_data['FG3_PCT'],
+                free_throws_made=player_data['FTM'],
+                free_throws_attempted=player_data['FTA'],
+                free_throw_percentage=player_data['FT_PCT'],
+                turnovers=player_data['TO'],
+                personal_fouls=player_data['PF'],
+                plus_minus=player_data['PLUS_MINUS']
+            )
+            
+            self.db.merge(stats)
+            self.db.commit()
+            
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Error processing player stats for game {game_id}: {str(e)}")
+            raise
