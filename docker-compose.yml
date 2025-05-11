@@ -16,12 +16,16 @@ services:
     build:
       context: ./Application/frontend
       dockerfile: Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     ports:
       - "7779:7779"
     depends_on:
       - backend
     networks:
       - nba_network
+    environment:
+      - NODE_ENV=production
 
 networks:
   nba_network:

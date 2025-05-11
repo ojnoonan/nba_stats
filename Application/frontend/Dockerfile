@@ -1,25 +1,26 @@
-FROM node:18-alpine AS build
+FROM node:18.17-alpine AS builder
 
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ git
 
-# Copy package files
+# Copy package files first
 COPY package*.json ./
 
-# Install dependencies with legacy peer deps
-RUN npm install --legacy-peer-deps
+# Install dependencies
+RUN npm install
 
-# Copy application files
+# Copy rest of the application
 COPY . .
 
-# Build application
+# Set production environment and build
+ENV NODE_ENV=production
 RUN npm run build
 
-# Production stage
+# Production stage with nginx
 FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 7779
