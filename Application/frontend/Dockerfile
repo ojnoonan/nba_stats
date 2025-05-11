@@ -2,17 +2,15 @@ FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Copy package files
+# Install dependencies first
 COPY package*.json ./
+RUN npm install --legacy-peer-deps postcss-import
 
-# Install dependencies
-RUN npm install
-
-# Copy the rest of the application
+# Copy rest of the app
 COPY . .
 
-# Build the application
-RUN npm run build
+# Build
+RUN NODE_ENV=production npm run build
 
 # Production stage
 FROM nginx:alpine
