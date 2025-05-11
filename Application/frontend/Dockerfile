@@ -18,8 +18,9 @@ RUN npm run build
 # Production stage
 FROM nginx:alpine
 
-# Add non-root user
-RUN adduser -D -u 1000 appuser && \
+# Add non-root user and install curl for healthcheck
+RUN apk add --no-cache curl && \
+    adduser -D -u 1000 appuser && \
     mkdir -p /var/cache/nginx && \
     chown -R appuser:appuser /var/cache/nginx
 
