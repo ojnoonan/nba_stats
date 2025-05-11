@@ -24,7 +24,8 @@ const HomePage = () => {
     isFetching: isRefetchingTeams 
   } = useQuery({
     queryKey: ['teams'],
-    queryFn: fetchTeams
+    queryFn: fetchTeams,
+    staleTime: 1000 * 60 * 5 // 5 minutes
   })
 
   const { 
@@ -33,7 +34,8 @@ const HomePage = () => {
     isFetching: isRefetchingPlayers 
   } = useQuery({
     queryKey: ['players'],
-    queryFn: () => fetchPlayers(null, true)
+    queryFn: () => fetchPlayers(null, true),
+    staleTime: 1000 * 60 * 5 // 5 minutes
   })
 
   const { 
@@ -42,7 +44,8 @@ const HomePage = () => {
     isFetching: isRefetchingGames 
   } = useQuery({
     queryKey: ['games'],
-    queryFn: () => fetchGames()
+    queryFn: () => fetchGames(),
+    staleTime: 1000 * 60 * 5 // 5 minutes
   })
 
   const {
@@ -50,7 +53,9 @@ const HomePage = () => {
     refetch: refetchStatus
   } = useQuery({
     queryKey: ['status'],
-    queryFn: fetchStatus
+    queryFn: fetchStatus,
+    refetchInterval: 30000, // Poll every 30 seconds
+    refetchIntervalInBackground: false // Don't poll when tab is not active
   })
 
   const handleCancelUpdate = async () => {

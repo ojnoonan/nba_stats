@@ -7,8 +7,8 @@ def test_get_status_new(client):
     response = client.get("/status")
     assert response.status_code == 200
     status = response.json()
-    assert status["is_updating"] is True
-    assert status["current_phase"] == "initializing"
+    assert status["is_updating"] is False
+    assert status["current_phase"] is None
     assert status["last_update"] is not None
     assert status["next_update"] is not None
 

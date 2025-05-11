@@ -628,6 +628,11 @@ class NBADataService:
                 status = DataUpdateStatus()
                 self.db.add(status)
             
+            # Prevent updates if initial load is in progress
+            if status.is_updating and status.current_phase in ['teams', 'players', 'games']:
+                logger.info("Initial data load in progress, skipping regular update")
+                return False
+
             # Check if this is initial data load
             team_count = self.db.query(Team).count()
             is_initial_load = team_count == 0
@@ -651,7 +656,7 @@ class NBADataService:
                 if not is_initial_load:
                     await self.cleanup_old_seasons()
                 
-                # Always update teams on initial load
+                # Update teams
                 status.current_phase = 'teams'
                 self.db.commit()
                 await self.update_teams()

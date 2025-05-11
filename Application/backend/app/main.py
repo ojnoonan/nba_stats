@@ -85,14 +85,61 @@ async def startup_event():
         try:
             team_count = db.query(Team).count()
             if team_count == 0:
-                logger.info("No teams found in database. Starting initial data load...")
-                background_tasks = BackgroundTasks()
-                background_tasks.add_task(background_data_update)
-                await background_data_update()
+                logger.info("No teams found in database. Starting initial data load sequence...")
+                service = NBADataService(db)
+                
+                # Get or create status record
+                status = db.query(DataUpdateStatus).first()
+                if not status:
+                    status = DataUpdateStatus()
+                    db.add(status)
+                
+                # Set initial load status
+                status.is_updating = True
+                status.current_phase = 'teams'
+                db.commit()
+                
+                try:
+                    # 1. Update Teams
+                    logger.info("1. Updating Teams...")
+                    await service.update_teams()
+                    status.teams_updated = True
+                    status.current_phase = 'players'
+                    db.commit()
+                    
+                    # 2. Update Players for each team
+                    logger.info("2. Updating Players...")
+                    teams = db.query(Team).all()
+                    for team in teams:
+                        await service.update_team_players(team.team_id)
+                    status.players_updated = True
+                    status.current_phase = 'games'
+                    db.commit()
+                    
+                    # 3. Update Games
+                    logger.info("3. Updating Games...")
+                    await service.update_games()
+                    status.games_updated = True
+                    status.current_phase = None
+                    status.is_updating = False
+                    status.last_successful_update = datetime.utcnow()
+                    status.next_scheduled_update = datetime.utcnow() + timedelta(hours=6)
+                    db.commit()
+                    
+                    logger.info("Initial data load completed successfully")
+                    
+                except Exception as e:
+                    logger.error(f"Error during initial data load: {str(e)}")
+                    status.is_updating = False
+                    status.current_phase = None
+                    status.last_error = str(e)
+                    status.last_error_time = datetime.utcnow()
+                    db.commit()
+                    raise
         finally:
             db.close()
             
-        # Start the scheduler
+        # Start the scheduler for regular updates
         from app.services.scheduler import start_scheduler
         scheduler = start_scheduler()
         logger.info("Scheduler started successfully")
@@ -111,8 +158,8 @@ async def get_status(db: Session = Depends(get_db)):
         status = db.query(DataUpdateStatus).first()
         if not status:
             status = DataUpdateStatus(
-                is_updating=True,
-                current_phase='initializing',
+                is_updating=False,  # Changed from True
+                current_phase=None,  # Changed from 'initializing'
                 last_successful_update=datetime.utcnow(),
                 next_scheduled_update=datetime.utcnow() + timedelta(hours=6)
             )
