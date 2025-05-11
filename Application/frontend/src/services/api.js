@@ -1,4 +1,4 @@
-const API_BASE_URL = ''  // Use relative paths in production
+const API_BASE_URL = window.location.port ? '' : ':7779'  // Include port if it's missing from the URL
 const RETRY_COUNT = 3
 const RETRY_DELAY = 1000
 const REQUEST_TIMEOUT = 15000
