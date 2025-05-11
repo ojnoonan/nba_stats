@@ -14,7 +14,7 @@ services:
     environment:
       - HOST=0.0.0.0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7778/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:7778/api/status"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -28,7 +28,7 @@ services:
     ports:
       - "0.0.0.0:7779:7779"
     environment:
-      - VITE_API_URL=http://${DOCKER_HOST_IP:-localhost}:7778
+      - VITE_API_URL=/api
     depends_on:
       - backend
     healthcheck:
