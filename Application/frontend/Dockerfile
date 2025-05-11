@@ -1,23 +1,21 @@
-FROM node:18-alpine
+FROM node:18-alpine as dependencies
 
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
+RUN npm install --prefer-offline --no-audit
 
-# Install dependencies
-RUN npm install
+FROM node:18-alpine as builder
 
-# Copy application files
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-
-# Build the app
 RUN npm run build
 
-# Install serve
+FROM node:18-alpine as runner
+
+WORKDIR /app
 RUN npm install -g serve
+COPY --from=builder /app/dist ./dist
 
 EXPOSE 7779
-
-# Start the app
-CMD ["serve", "-s", "dist", "-l", "7779"]
+CMD ["serve", "-s", "dist", "-l", "7779", "--no-clipboard"]
