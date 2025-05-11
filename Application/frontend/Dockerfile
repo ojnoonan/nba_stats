@@ -3,19 +3,16 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
-# Set npm configuration for more reliability and better error reporting
-ENV NODE_ENV=production
-ENV NPM_CONFIG_LOGLEVEL=verbose
+# Add python and build tools needed for some npm packages
+RUN apk add --no-cache python3 make g++ gcc
 
-# Copy package files
-COPY package*.json ./
+# First copy only package files to leverage Docker cache
+COPY package.json ./
 
-# Install dependencies with clean slate and increased memory
-RUN npm config set registry https://registry.npmjs.org/ && \
-    npm cache clean --force && \
-    npm install --no-audit --no-fund --verbose
+# Install dependencies with clean npm install
+RUN npm install --legacy-peer-deps
 
-# Copy source code
+# Copy the rest of the application code
 COPY . .
 
 # Build the application
