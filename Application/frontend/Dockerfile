@@ -3,17 +3,24 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
-# Add python and build tools needed for some npm packages
+# Add build essentials
 RUN apk add --no-cache python3 make g++ gcc
 
-# First copy only package files to leverage Docker cache
-COPY package.json ./
+# Copy package files and install dependencies
+COPY package*.json ./
+COPY postcss.config.cjs ./
+COPY tailwind.config.js ./
 
-# Install dependencies with clean npm install
-RUN npm install --legacy-peer-deps
+# Install all dependencies
+RUN npm install postcss postcss-import tailwindcss autoprefixer --save-dev && \
+    npm install
 
-# Copy the rest of the application code
+# Copy the rest of the application
 COPY . .
+
+# Set environment for build
+ENV NODE_ENV=production
+ENV VITE_API_URL=http://backend:7778
 
 # Build the application
 RUN npm run build

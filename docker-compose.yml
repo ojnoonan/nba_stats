@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    build: 
-      context: ./Application/backend
-      dockerfile: Dockerfile
+    build: ./Application/backend
     pull_policy: build
     container_name: nba_stats_backend
     restart: unless-stopped
@@ -23,9 +21,7 @@ services:
       start_period: 30s
 
   frontend:
-    build:
-      context: ./Application/frontend
-      dockerfile: Dockerfile
+    build: ./Application/frontend
     pull_policy: build
     container_name: nba_stats_frontend
     restart: unless-stopped
@@ -33,14 +29,10 @@ services:
       - "0.0.0.0:7779:7779"
     environment:
       - NODE_ENV=production
+      - NODE_OPTIONS=--max_old_space_size=4096
     depends_on:
       backend:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7779"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 volumes:
   nba_stats_data:

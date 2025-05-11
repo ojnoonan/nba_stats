@@ -9,17 +9,8 @@ export default defineConfig({
       '/src': path.resolve(__dirname, 'src')
     }
   },
-  css: {
-    postcss: 'postcss.config.cjs'
-  },
   server: {
-    port: 7779,
-    proxy: {
-      '^/(games|teams|players|search)': {
-        target: 'http://localhost:7778',
-        changeOrigin: true
-      }
-    }
+    port: 7779
   },
   preview: {
     port: 7779
@@ -27,19 +18,20 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: true,
+    sourcemap: false,
     minify: 'terser',
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom']
-        }
-      }
-    },
     terserOptions: {
       compress: {
         drop_console: true,
         drop_debugger: true
+      }
+    }
+  },
+  css: {
+    postcss: './postcss.config.cjs',
+    preprocessorOptions: {
+      scss: {
+        additionalData: '@import "./src/styles/variables.scss";'
       }
     }
   }
