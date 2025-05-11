@@ -2,20 +2,23 @@ FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Add build essentials
-RUN apk add --no-cache python3 make g++ gcc
+# Add build essentials and git (needed for some npm packages)
+RUN apk add --no-cache python3 make g++ gcc git
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies with CI mode and verbose logging
-RUN npm install --verbose
+# Clean install dependencies with legacy peer deps
+RUN npm clean-install --legacy-peer-deps
 
 # Copy the rest of the application
 COPY . .
 
-# Build the application with verbose logging
-RUN npm run build --verbose
+# Set production environment
+ENV NODE_ENV=production
+
+# Build the application
+RUN npm run build
 
 # Production stage
 FROM nginx:alpine

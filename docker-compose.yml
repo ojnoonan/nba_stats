@@ -16,11 +16,9 @@ services:
     build:
       context: ./Application/frontend
       dockerfile: Dockerfile
-      args:
-        - DOCKER_BUILDKIT=1
-        - NODE_ENV=production
-        - NPM_CONFIG_LEGACY_PEER_DEPS=true
-        - NPM_CONFIG_LOGLEVEL=verbose
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=http://backend:7778
     ports:
       - "7779:7779"
     depends_on:
