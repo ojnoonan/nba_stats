@@ -15,10 +15,9 @@ export default defineConfig({
   server: {
     port: 7779,
     proxy: {
-      '/api': {
+      '^/(games|teams|players|search)': {
         target: 'http://localhost:7778',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        changeOrigin: true
       }
     }
   },

@@ -29,7 +29,7 @@ services:
     ports:
       - "0.0.0.0:7779:7779"
     environment:
-      - VITE_API_URL=/api
+      - VITE_API_URL=http://backend:7778
     depends_on:
       - backend
     healthcheck:
