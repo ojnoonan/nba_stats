@@ -5,6 +5,14 @@ export default defineConfig({
   plugins: [react()],
   base: '/',
   build: {
-    minify: true
-  }
+    minify: true,
+    rollupOptions: {
+      output: {
+        manualChunks: undefined
+      }
+    },
+    sourcemap: true,
+    reportCompressedSize: true
+  },
+  logLevel: 'info'
 })
