@@ -918,32 +918,35 @@ class NBADataService:
             minutes_str = player_data.get('MIN', '0')
             if ':' in minutes_str:  # Format like "32:45"
                 minutes, seconds = map(int, minutes_str.split(':'))
-                total_minutes = minutes + (seconds / 60)
+                total_minutes = str(minutes) + ":" + str(seconds).zfill(2)  # Format as "MM:SS"
             else:
-                total_minutes = float(minutes_str)
+                # Convert float minutes to MM:SS format
+                minutes = int(float(minutes_str))
+                seconds = int((float(minutes_str) % 1) * 60)
+                total_minutes = str(minutes) + ":" + str(seconds).zfill(2)
 
             # Create or update player game stats
             stats = PlayerGameStats(
                 game_id=game_id,
                 player_id=player_data['PLAYER_ID'],
                 team_id=player_data['TEAM_ID'],
-                minutes_played=total_minutes,
+                minutes=total_minutes,
                 points=player_data['PTS'],
                 rebounds=player_data['REB'],
                 assists=player_data['AST'],
                 steals=player_data['STL'],
                 blocks=player_data['BLK'],
-                field_goals_made=player_data['FGM'],
-                field_goals_attempted=player_data['FGA'],
-                field_goal_percentage=player_data['FG_PCT'],
-                three_pointers_made=player_data['FG3M'],
-                three_pointers_attempted=player_data['FG3A'],
-                three_point_percentage=player_data['FG3_PCT'],
-                free_throws_made=player_data['FTM'],
-                free_throws_attempted=player_data['FTA'],
-                free_throw_percentage=player_data['FT_PCT'],
+                fgm=player_data['FGM'],  # Changed from field_goals_made
+                fga=player_data['FGA'],  # Changed from field_goals_attempted
+                fg_pct=player_data['FG_PCT'],  # Changed from field_goal_percentage
+                tpm=player_data['FG3M'],  # Changed from three_pointers_made
+                tpa=player_data['FG3A'],  # Changed from three_pointers_attempted
+                tp_pct=player_data['FG3_PCT'],  # Changed from three_point_percentage
+                ftm=player_data['FTM'],  # Changed from free_throws_made
+                fta=player_data['FTA'],  # Changed from free_throws_attempted
+                ft_pct=player_data['FT_PCT'],  # Changed from free_throw_percentage
                 turnovers=player_data['TO'],
-                personal_fouls=player_data['PF'],
+                fouls=player_data['PF'],
                 plus_minus=player_data['PLUS_MINUS']
             )
             
