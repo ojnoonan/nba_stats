@@ -27,12 +27,17 @@ services:
       context: ./Application/frontend
       dockerfile: Dockerfile
       no_cache: true
+      args:
+        - NODE_ENV=production
+        - NPM_CONFIG_LOGLEVEL=verbose
+        - NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
     container_name: nba_stats_frontend
     restart: unless-stopped
     ports:
       - "0.0.0.0:7779:7779"
     environment:
       - VITE_API_URL=http://backend:7778
+      - NODE_OPTIONS=--max_old_space_size=4096
     depends_on:
       backend:
         condition: service_healthy

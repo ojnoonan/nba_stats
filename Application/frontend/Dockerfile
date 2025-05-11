@@ -3,12 +3,17 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json ./
+# Set npm configuration for more reliability and better error reporting
+ENV NODE_ENV=production
+ENV NPM_CONFIG_LOGLEVEL=verbose
 
-# Clean install dependencies
-RUN npm cache clean --force && \
-    npm install
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies with clean slate and increased memory
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm cache clean --force && \
+    npm install --no-audit --no-fund --verbose
 
 # Copy source code
 COPY . .
