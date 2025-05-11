@@ -1,29 +1,18 @@
-# Build stage
-FROM node:18-alpine
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Install essential build tools
-RUN apk add --no-cache python3 make g++ gcc
+# Install dependencies first (better caching)
+COPY package.json .
+RUN npm install
 
-# Copy only package files first
-COPY package.json ./
-
-# Clear npm cache and install dependencies with minimal configuration
-RUN npm cache clean --force && \
-    npm install --production=false
-
-# Copy the rest of the application
+# Copy source and build
 COPY . .
-
-# Build the application
 RUN npm run build
 
-# Serve stage
+# Serve with nginx
 FROM nginx:alpine
-COPY --from=0 /app/dist /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-
 EXPOSE 7779
-
 CMD ["nginx", "-g", "daemon off;"]

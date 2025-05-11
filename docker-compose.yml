@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3'
 
 services:
   backend:
@@ -8,17 +8,12 @@ services:
       - "7778:7778"
     volumes:
       - nba_stats_data:/app/data
-    environment:
-      - HOST=0.0.0.0
-      - NBA_STATS_DATA_DIR=/app/data
 
   frontend:
     build: ./Application/frontend
     container_name: nba_stats_frontend
     ports:
       - "7779:7779"
-    depends_on:
-      - backend
 
 volumes:
   nba_stats_data:
