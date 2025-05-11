@@ -15,10 +15,9 @@ export default defineConfig({
   preview: {
     port: 7779,
     proxy: {
-      '/api': {
+      '^/(?!assets).*': {
         target: 'http://localhost:7778',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
         secure: false
       }
     }
