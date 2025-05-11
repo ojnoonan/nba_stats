@@ -1,4 +1,5 @@
-const API_BASE_URL = window.location.port ? '' : ':7779'  // Include port if it's missing from the URL
+// Construct base URL using current origin
+const API_BASE_URL = window.location.origin.includes(':7779') ? '' : window.location.protocol + '//' + window.location.hostname + ':7779'
 const RETRY_COUNT = 3
 const RETRY_DELAY = 1000
 const REQUEST_TIMEOUT = 15000
