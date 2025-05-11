@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   backend:
-    build: ./Application/backend
+    build:
+      context: ./Application/backend
+      dockerfile: Dockerfile
     ports:
       - "7778:7778"
     volumes:
@@ -11,7 +13,17 @@ services:
       - nba_network
 
   frontend:
-    build: ./Application/frontend
+    build:
+      context: ./Application/frontend
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
+        - CI=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7779"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     ports:
       - "7779:7779"
     depends_on:
