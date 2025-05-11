@@ -16,8 +16,6 @@ services:
     build:
       context: ./Application/frontend
       dockerfile: Dockerfile
-      args:
-        - NODE_ENV=production
     ports:
       - "7779:7779"
     depends_on:

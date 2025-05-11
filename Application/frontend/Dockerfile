@@ -2,24 +2,16 @@ FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Add necessary build tools
-RUN apk add --no-cache python3 make g++
-
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies with clean npm cache
-RUN npm cache clean --force && \
-    npm ci
+# Install dependencies
+RUN npm install
 
-# Copy rest of the app
+# Copy application files
 COPY . .
 
-# Set environment variables for build
-ENV NODE_ENV=production
-ENV VITE_API_URL=http://backend:7778
-
-# Build the application
+# Build application
 RUN npm run build
 
 # Production stage
