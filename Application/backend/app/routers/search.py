@@ -13,7 +13,7 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
-@router.get("/")
+@router.get("")
 async def search(
     term: str = Query(..., min_length=2),
     db: Session = Depends(get_db)

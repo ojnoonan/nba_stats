@@ -42,7 +42,6 @@ export default function NavigationBar() {
         <div className="flex items-center space-x-2 text-primary">
           <LoadingSpinner size="small" />
           <span>Updating {phase}</span>
-          <ChevronIcon expanded={showStatusDropdown} />
         </div>
       );
     }
@@ -65,7 +64,7 @@ export default function NavigationBar() {
   };
 
   const renderStatusDropdown = () => {
-    if (!status) return null;
+    if (!status || status.is_updating) return null;
 
     return (
       <div className="absolute right-0 top-full mt-1 w-72 rounded-lg border bg-background shadow-lg p-4">
@@ -83,19 +82,6 @@ export default function NavigationBar() {
               <div className="text-sm font-medium text-destructive">Last Error</div>
               <div className="text-sm text-destructive">{status.last_error}</div>
               <div className="text-xs text-muted-foreground">({formatDate(status.last_error_time)})</div>
-            </div>
-          )}
-          {status.is_updating && (
-            <div className="flex items-center space-x-2">
-              <LoadingSpinner size="small" />
-              <div>
-                <div className="text-sm font-medium">Updating {status.current_phase}</div>
-                <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                  {status.teams_updated && <span className="text-green-500">✓ Teams</span>}
-                  {status.teams_updated && status.players_updated && <span className="text-green-500">✓ Players</span>}
-                  {status.teams_updated && status.players_updated && status.games_updated && <span className="text-green-500">✓ Games</span>}
-                </div>
-              </div>
             </div>
           )}
         </div>
@@ -134,7 +120,8 @@ export default function NavigationBar() {
                 variant="ghost"
                 size="sm"
                 className="relative"
-                onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                onClick={() => !status?.is_updating && setShowStatusDropdown(!showStatusDropdown)}
+                disabled={status?.is_updating}
               >
                 {renderStatusMessage()}
               </Button>

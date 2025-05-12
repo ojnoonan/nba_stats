@@ -4,7 +4,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from app.database.database import get_db
-from app.models.models import DataUpdateStatus
+from app.models.models import DataUpdateStatus, Team  # Import Team
 from app.services.nba_data_service import NBADataService
 
 router = APIRouter(
@@ -97,6 +97,33 @@ async def trigger_full_update(background_tasks: BackgroundTasks, db: Session = D
     
     background_tasks.add_task(update_all)
     return {"message": "Full update initiated"}
+
+@router.post("/update/cancel")
+async def cancel_current_update(db: Session = Depends(get_db)):
+    """Cancel any ongoing data update"""
+    status = db.query(DataUpdateStatus).first()
+    if not status:
+        status = DataUpdateStatus()
+        db.add(status)
+
+    if status.is_updating:
+        status.is_updating = False
+        # Decide if we want to mark the current_phase as errored or just clear it
+        # For now, let's clear it and set a general last_error
+        status.last_error = f"Update of {status.current_phase or 'all components'} cancelled by user."
+        status.last_error_time = datetime.utcnow()
+        status.current_phase = None # Clear the current phase
+        # Optionally, reset specific component updated flags if needed
+        # status.teams_updated = False # Example, if cancelling mid-teams update
+        # status.players_updated = False
+        # status.games_updated = False
+        db.commit()
+        # It might be good to also attempt to cancel the background task itself if possible,
+        # but FastAPI's BackgroundTasks are fire-and-forget.
+        # For true cancellation, a more robust task queue (Celery, RQ) would be needed.
+        return {"message": "Update cancellation request processed. The running task will attempt to stop gracefully if designed to do so, or will complete its current step."}
+    else:
+        return {"message": "No update is currently in progress."}
 
 @router.post("/update/{component}")
 async def trigger_component_update(

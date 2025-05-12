@@ -196,6 +196,17 @@ export const cancelUpdate = async () => {
   }
 }
 
+export const cancelAdminUpdate = async () => {
+  try {
+    return await fetchWithRetry(`${API_BASE_URL}/admin/update/cancel`, {
+      method: 'POST'
+    });
+  } catch (error) {
+    console.error('Failed to cancel admin update:', error);
+    throw new Error('Failed to cancel admin update');
+  }
+};
+
 export const searchTeamsAndPlayers = async (term) => {
   try {
     const params = new URLSearchParams({ term })

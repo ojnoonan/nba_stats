@@ -1,85 +1,48 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { format } from 'date-fns'
+import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { format } from 'date-fns';
 import { 
   fetchTeams, 
   fetchPlayers, 
   fetchGames, 
-  fetchStatus, 
-  triggerTeamsUpdate,
-  triggerPlayersUpdate,
-  triggerGamesUpdate,
-  cancelUpdate 
-} from '../services/api'
-import { Card } from '../components/ui/card'
-import { Button } from '../components/ui/button'
-import { LoadingSpinner } from '../components/ui/loading-spinner'
+  fetchStatus 
+} from '../services/api';
+import { Card } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { LoadingSpinner } from '../components/ui/loading-spinner';
 
 const HomePage = () => {
-  const queryClient = useQueryClient()
-
   const { 
     data: teams,
-    refetch: refetchTeams,
-    isFetching: isRefetchingTeams 
+    isFetching: isRefetchingTeams
   } = useQuery({
     queryKey: ['teams'],
-    queryFn: fetchTeams,
-    suspense: true
-  })
+    queryFn: fetchTeams
+  });
 
   const { 
     data: players,
-    refetch: refetchPlayers,
     isFetching: isRefetchingPlayers 
   } = useQuery({
     queryKey: ['players'],
-    queryFn: () => fetchPlayers(null, true),
-    suspense: true
-  })
+    queryFn: () => fetchPlayers(null, true)
+  });
 
   const { 
     data: games,
-    refetch: refetchGames,
-    isFetching: isRefetchingGames 
+    isFetching: isRefetchingGames
   } = useQuery({
     queryKey: ['games'],
-    queryFn: () => fetchGames(),
-    suspense: true
-  })
+    queryFn: () => fetchGames()
+  });
 
   const {
-    data: status,
-    refetch: refetchStatus
+    data: status
   } = useQuery({
     queryKey: ['status'],
-    queryFn: fetchStatus
-  })
-
-  const handleRefreshAll = async () => {
-    try {
-      await Promise.all([
-        triggerTeamsUpdate(),
-        triggerPlayersUpdate(),
-        triggerGamesUpdate()
-      ])
-      // Invalidate all queries at once
-      await queryClient.invalidateQueries({
-        queryKey: [['teams'], ['players'], ['games'], ['status']]
-      })
-    } catch (error) {
-      console.error('Error refreshing data:', error)
-    }
-  }
-
-  const handleCancelUpdate = async () => {
-    try {
-      await cancelUpdate()
-      queryClient.invalidateQueries({ queryKey: ['status'] })
-    } catch (error) {
-      console.error('Error canceling update:', error)
-    }
-  }
+    queryFn: fetchStatus,
+    refetchInterval: 5000
+  });
 
   const sections = [
     {
@@ -88,8 +51,7 @@ const HomePage = () => {
       path: '/teams',
       isLoading: status?.is_updating && status.current_phase === 'teams',
       isRefetching: isRefetchingTeams,
-      description: 'Browse NBA teams and their standings',
-      refreshKey: 'teams'
+      description: 'Browse NBA teams and their standings'
     },
     {
       title: 'Players',
@@ -97,8 +59,7 @@ const HomePage = () => {
       path: '/players',
       isLoading: status?.is_updating && status.current_phase === 'players',
       isRefetching: isRefetchingPlayers,
-      description: 'Browse player profiles and statistics',
-      refreshKey: 'players'
+      description: 'Browse player profiles and statistics'
     },
     {
       title: 'Games',
@@ -106,8 +67,7 @@ const HomePage = () => {
       path: '/games',
       isLoading: status?.is_updating && status.current_phase === 'games',
       isRefetching: isRefetchingGames,
-      description: 'View all NBA game results and details',
-      refreshKey: 'games'
+      description: 'View all NBA game results and details'
     },
     {
       title: 'Upcoming Games',
@@ -115,55 +75,59 @@ const HomePage = () => {
       path: '/upcoming-games',
       isLoading: status?.is_updating && status.current_phase === 'games',
       isRefetching: isRefetchingGames,
-      description: 'Check upcoming NBA game schedules',
-      refreshKey: 'games'
+      description: 'Check upcoming NBA game schedules'
     }
-  ]
+  ];
+
+  const isAnySectionLoading = sections.some(s => s.isRefetching && (s.count === 0));
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="space-y-8 container mx-auto p-4">
+      <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold">NBA Stats Dashboard</h1>
-          <p className="text-gray-500">
-            Last updated: {status?.last_update ? format(new Date(status.last_update), 'PPp') : 'Never'}
+          <p className="text-muted-foreground">
+            Last successful data update: {status?.last_update ? format(new Date(status.last_update), 'MMM d, yyyy HH:mm') : 'Never'}
           </p>
+          {status?.is_updating && (
+            <div className="mt-2 flex items-center text-sm text-blue-600">
+              <LoadingSpinner size="small" className="mr-2"/>
+              <span>Data update in progress... (Phase: {status.current_phase || 'Initializing'})</span>
+            </div>
+          )}
+          {status?.last_error && !status.is_updating && (
+            <p className="text-sm text-red-500 mt-1">
+              Last update attempt failed: {status.last_error} ({status.last_error_time ? format(new Date(status.last_error_time), 'MMM d, HH:mm') : 'N/A'})
+            </p>
+          )}
         </div>
-        
-        {status?.is_updating && (
-          <Button onClick={handleCancelUpdate} variant="outline">
-            Cancel Update
-          </Button>
-        )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {isAnySectionLoading && !status?.is_updating && (
+        <div className="text-center p-10">
+          <LoadingSpinner size="large" />
+          <p className="mt-4 text-lg text-muted-foreground">Loading initial data...</p>
+        </div>
+      )}
+
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
         {sections.map((section) => (
-          <Card key={section.path} className="p-6">
+          <Card key={section.path} className="p-6 shadow-lg hover:shadow-xl transition-shadow">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h2 className="text-2xl font-bold">{section.title}</h2>
-                <p className="text-gray-500">{section.description}</p>
+                <h2 className="text-2xl font-semibold text-primary">{section.title}</h2>
+                <p className="text-muted-foreground text-sm">{section.description}</p>
               </div>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => handleRefreshAll()}
-                disabled={status?.is_updating}
-              >
-                {section.isLoading || section.isRefetching ? (
-                  <LoadingSpinner size="small" />
-                ) : (
-                  "↻"
-                )}
-              </Button>
+              {(section.isLoading || (section.isRefetching && section.count === 0)) && !status?.is_updating && <LoadingSpinner size="small" />}
             </div>
             
             <div className="flex justify-between items-center">
-              <span className="text-4xl font-bold">{section.count}</span>
+              <span className="text-4xl font-bold">
+                { (section.isRefetching && section.count === 0 && !status?.is_updating) ? '-' : section.count}
+              </span>
               <Link
                 to={section.path}
-                className="text-blue-500 hover:text-blue-700 transition-colors"
+                className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
               >
                 View All →
               </Link>
@@ -172,7 +136,7 @@ const HomePage = () => {
         ))}
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default HomePage
+export default HomePage;
