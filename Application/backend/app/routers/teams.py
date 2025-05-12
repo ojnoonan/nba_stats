@@ -14,7 +14,7 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
-@router.get("/")
+@router.get("")  # Changed from "/"
 def get_teams(db: Session = Depends(get_db)):
     """Get all teams"""
     try:

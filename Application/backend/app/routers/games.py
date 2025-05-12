@@ -15,7 +15,7 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
-@router.get("/", response_model=List[GameBase])
+@router.get("", response_model=List[GameBase])
 async def get_games(
     team_id: Optional[int] = None,
     status: Optional[str] = None,

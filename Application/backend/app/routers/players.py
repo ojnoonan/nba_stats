@@ -13,7 +13,7 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
-@router.get("/")
+@router.get("")
 async def get_players(
     team_id: Optional[int] = None,
     active_only: bool = True,

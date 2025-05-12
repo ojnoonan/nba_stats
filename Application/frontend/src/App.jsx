@@ -1,12 +1,14 @@
 import { Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { LoadingSpinner } from './components/ui/loading-spinner'
+import { Layout } from './components/layout/Layout'
 import HomePage from './pages/HomePage'
 import TeamsPage from './pages/TeamsPage'
 import PlayersPage from './pages/PlayersPage'
 import GamesPage from './pages/GamesPage'
 import UpcomingGamesPage from './pages/UpcomingGamesPage'
 import GameDetailsPage from './pages/GameDetailsPage'
+import AdminPage from './pages/AdminPage'
 import './App.css'
 
 const SuspenseFallback = () => (
@@ -18,7 +20,7 @@ const SuspenseFallback = () => (
 function App() {
   return (
     <Router>
-      <div className="container mx-auto px-4 py-8">
+      <Layout>
         <Suspense fallback={<SuspenseFallback />}>
           <Routes>
             <Route path="/" element={<HomePage />} />
@@ -27,9 +29,10 @@ function App() {
             <Route path="/games" element={<GamesPage />} />
             <Route path="/upcoming-games" element={<UpcomingGamesPage />} />
             <Route path="/games/:id" element={<GameDetailsPage />} />
+            <Route path="/admin" element={<AdminPage />} />
           </Routes>
         </Suspense>
-      </div>
+      </Layout>
     </Router>
   )
 }

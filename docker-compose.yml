@@ -12,18 +12,23 @@ services:
 
   backend:
     build: ./Application/backend
-    ports:
-      - "7778:7778"
+    expose:
+      - "7778"
+    volumes:
+      - nba_data:/app/data
     networks:
       - nba_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7778/status"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
-      start_period: 40s
+      start_period: 15s
     restart: unless-stopped
 
 networks:
   nba_network:
     driver: bridge
+
+volumes:
+  nba_data:

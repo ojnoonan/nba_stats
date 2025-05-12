@@ -5,7 +5,7 @@ from contextlib import contextmanager, asynccontextmanager
 import os
 
 # Use environment variable with fallback for data directory
-DATA_DIR = os.getenv('NBA_STATS_DATA_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data'))
+DATA_DIR = os.getenv('NBA_STATS_DATA_DIR', '/app/data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/nba_stats.db"

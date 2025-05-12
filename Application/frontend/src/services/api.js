@@ -1,5 +1,5 @@
-// Always use the current URL port for API requests
-const API_BASE_URL = window.location.port ? `${window.location.protocol}//${window.location.hostname}:${window.location.port}` : `${window.location.protocol}//${window.location.hostname}`
+// Always use relative path for API URL
+const API_BASE_URL = '/api'
 
 const RETRY_COUNT = 3
 const RETRY_DELAY = 1000
@@ -203,5 +203,36 @@ export const searchTeamsAndPlayers = async (term) => {
   } catch (error) {
     console.error('Failed to search:', error)
     throw new Error('Failed to search')
+  }
+}
+
+export const fetchAdminStatus = async () => {
+  try {
+    return await fetchWithRetry(`${API_BASE_URL}/admin/status`)
+  } catch (error) {
+    console.error('Failed to fetch admin status:', error)
+    throw new Error('Failed to fetch admin status')
+  }
+}
+
+export const triggerFullUpdate = async () => {
+  try {
+    return await fetchWithRetry(`${API_BASE_URL}/admin/update/all`, {
+      method: 'POST'
+    })
+  } catch (error) {
+    console.error('Failed to trigger full update:', error)
+    throw new Error('Failed to trigger full update')
+  }
+}
+
+export const triggerComponentUpdate = async (component) => {
+  try {
+    return await fetchWithRetry(`${API_BASE_URL}/admin/update/${component}`, {
+      method: 'POST'
+    })
+  } catch (error) {
+    console.error('Failed to trigger component update:', error)
+    throw new Error('Failed to trigger component update')
   }
 }

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Body
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Body, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -12,7 +12,7 @@ from app.models.models import DataUpdateStatus, Team
 from app.database.database import get_db, get_async_db, engine, Base, SessionLocal
 from app.database.init_db import init_db
 from app.services.nba_data_service import NBADataService
-from app.routers import teams, players, games, search
+from app.routers import teams, players, games, search, admin
 
 # Configure logging
 logging.basicConfig(
@@ -70,122 +70,54 @@ app.add_middleware(
     expose_headers=["location"]
 )
 
-# Include routers
-app.include_router(teams.router)
-app.include_router(players.router)
-app.include_router(games.router)
-app.include_router(search.router)
+# Create API router
+api_router = APIRouter()
+
+# Health check endpoint
+@api_router.get("/status")
+def health_check():
+    """A simple health check endpoint"""
+    return {"status": "ok", "timestamp": datetime.utcnow()}
+
+# Include all routers under the API router
+api_router.include_router(teams.router)
+api_router.include_router(players.router)
+api_router.include_router(games.router)
+api_router.include_router(search.router)
+api_router.include_router(admin.router)
+
+# Mount all routes
+app.include_router(api_router)
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database and start scheduler on startup"""
+    """Initialize database tables only on startup"""
     try:
-        # Initialize database
+        # Only initialize database tables, no data loading
         init_db()
-        logger.info("Database initialized successfully")
+        logger.info("Database tables initialized successfully")
         
-        # Check if we need initial data load
+        # Initialize empty status if needed
         db = SessionLocal()
         try:
-            team_count = db.query(Team).count()
-            if team_count == 0:
-                logger.info("No teams found in database. Starting initial data load sequence...")
-                service = NBADataService(db)
-                
-                # Get or create status record
-                status = db.query(DataUpdateStatus).first()
-                if not status:
-                    status = DataUpdateStatus()
-                    db.add(status)
-                
-                # Set initial load status
-                status.is_updating = True
-                status.current_phase = 'teams'
+            status = db.query(DataUpdateStatus).first()
+            if not status:
+                status = DataUpdateStatus(
+                    is_updating=False,
+                    current_phase=None,
+                    last_successful_update=None,
+                    next_scheduled_update=None
+                )
+                db.add(status)
                 db.commit()
-                
-                try:
-                    # 1. Update Teams
-                    logger.info("1. Updating Teams...")
-                    await service.update_teams()
-                    status.teams_updated = True
-                    status.current_phase = 'players'
-                    db.commit()
-                    
-                    # 2. Update Players for each team
-                    logger.info("2. Updating Players...")
-                    teams = db.query(Team).all()
-                    for team in teams:
-                        await service.update_team_players(team.team_id)
-                    status.players_updated = True
-                    status.current_phase = 'games'
-                    db.commit()
-                    
-                    # 3. Update Games
-                    logger.info("3. Updating Games...")
-                    await service.update_games()
-                    status.games_updated = True
-                    status.current_phase = None
-                    status.is_updating = False
-                    status.last_successful_update = datetime.utcnow()
-                    status.next_scheduled_update = datetime.utcnow() + timedelta(hours=6)
-                    db.commit()
-                    
-                    logger.info("Initial data load completed successfully")
-                    
-                except Exception as e:
-                    logger.error(f"Error during initial data load: {str(e)}")
-                    status.is_updating = False
-                    status.current_phase = None
-                    status.last_error = str(e)
-                    status.last_error_time = datetime.utcnow()
-                    db.commit()
-                    raise
+                logger.info("Initialized empty status record")
         finally:
             db.close()
-            
-        # Start the scheduler for regular updates
-        from app.services.scheduler import start_scheduler
-        scheduler = start_scheduler()
-        logger.info("Scheduler started successfully")
-        
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
         raise
 
-@app.get("/")
-async def root():
-    return {"message": "Welcome to NBA Stats API"}
-
-@app.get("/status")
-async def get_status(db: Session = Depends(get_db)):
-    try:
-        status = db.query(DataUpdateStatus).first()
-        if not status:
-            status = DataUpdateStatus(
-                is_updating=False,  # Changed from True
-                current_phase=None,  # Changed from 'initializing'
-                last_successful_update=datetime.utcnow(),
-                next_scheduled_update=datetime.utcnow() + timedelta(hours=6)
-            )
-            db.add(status)
-            db.commit()
-        
-        return {
-            "last_update": status.last_successful_update,
-            "next_update": status.next_scheduled_update,
-            "is_updating": status.is_updating,
-            "current_phase": status.current_phase,
-            "teams_updated": status.teams_updated,
-            "players_updated": status.players_updated,
-            "games_updated": status.games_updated,
-            "last_error": status.last_error,
-            "last_error_time": status.last_error_time
-        }
-    except Exception as e:
-        logger.error(f"Error getting status: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/update")
+@api_router.post("/update")
 async def trigger_update(
     background_tasks: BackgroundTasks,
     update_types: List[str] = Body(default=None, embed=True)
@@ -197,31 +129,19 @@ async def trigger_update(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/reset-update-status")
+@api_router.post("/reset-update-status")
 async def reset_update_status(db: Session = Depends(get_db)):
-    """Reset the update status if it's stuck"""
+    """Reset a stuck update status"""
     try:
         status = db.query(DataUpdateStatus).first()
-        if not status:
-            status = DataUpdateStatus()
-            db.add(status)
-        
-        # Reset all flags
-        status.is_updating = False
-        status.teams_updated = False
-        status.players_updated = False
-        status.games_updated = False
-        status.current_phase = None
-        status.last_error = "Status reset manually"
-        status.last_error_time = datetime.utcnow()
-        status.last_successful_update = datetime.utcnow() - timedelta(hours=6)
-        status.next_scheduled_update = datetime.utcnow()
-        
-        db.commit()
+        if status:
+            status.is_updating = False
+            status.current_phase = None
+            db.commit()
         return {"message": "Update status reset successfully"}
     except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error resetting status: {str(e)}")
+        logger.error(f"Error resetting update status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
