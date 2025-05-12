@@ -1,12 +1,29 @@
-version: '3'
-
 services:
   frontend:
     build: ./Application/frontend
     ports:
       - "7779:7779"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - nba_network
+    restart: unless-stopped
 
   backend:
     build: ./Application/backend
     ports:
       - "7778:7778"
+    networks:
+      - nba_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7778/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+networks:
+  nba_network:
+    driver: bridge
