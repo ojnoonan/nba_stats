@@ -1,0 +1,30 @@
+async def _update_component_status(self, component_name):
+    """Update the status for a specific component regardless of whether data changed"""
+    try:
+        # Get the existing status record or create a new one
+        status = self.db.query(DataUpdateStatus).first()
+        if not status:
+            status = DataUpdateStatus()
+            self.db.add(status)
+
+        # Update the component-specific status fields
+        if component_name == 'teams':
+            status.teams_updated = True
+            status.teams_last_update = datetime.utcnow()
+        elif component_name == 'players':
+            status.players_updated = True
+            status.players_last_update = datetime.utcnow()
+        elif component_name == 'games':
+            status.games_updated = True
+            status.games_last_update = datetime.utcnow()
+
+        # Update the common status fields
+        status.last_successful_update = datetime.utcnow()
+        status.next_scheduled_update = datetime.utcnow() + timedelta(hours=6)
+
+        self.db.commit()
+        logger.info(f"Updated status for component: {component_name}")
+
+    except Exception as e:
+        logger.error(f"Error updating component status for {component_name}: {str(e)}")
+        self.db.rollback()

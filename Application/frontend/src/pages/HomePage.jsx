@@ -1,140 +1,218 @@
-import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { format } from 'date-fns';
-import { 
-  fetchTeams, 
-  fetchPlayers, 
-  fetchGames, 
-  fetchStatus 
-} from '../services/api';
-import { Card } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { LoadingSpinner } from '../components/ui/loading-spinner';
+import React from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { format } from "date-fns";
+import {
+  fetchTeams,
+  fetchPlayers,
+  fetchGames,
+  fetchStatus,
+} from "../services/api";
+import { LoadingSpinner } from "../components/ui/loading-spinner";
 
 const HomePage = () => {
-  const { 
-    data: teams,
-    isFetching: isRefetchingTeams
-  } = useQuery({
-    queryKey: ['teams'],
-    queryFn: fetchTeams
+  const { data: teams } = useQuery({
+    queryKey: ["teams"],
+    queryFn: fetchTeams,
   });
 
-  const { 
-    data: players,
-    isFetching: isRefetchingPlayers 
-  } = useQuery({
-    queryKey: ['players'],
-    queryFn: () => fetchPlayers(null, true)
+  const { data: players } = useQuery({
+    queryKey: ["players"],
+    queryFn: () => fetchPlayers(null, true),
   });
 
-  const { 
-    data: games,
-    isFetching: isRefetchingGames
-  } = useQuery({
-    queryKey: ['games'],
-    queryFn: () => fetchGames()
+  const { data: games } = useQuery({
+    queryKey: ["games"],
+    queryFn: () => fetchGames(),
   });
 
-  const {
-    data: status
-  } = useQuery({
-    queryKey: ['status'],
+  const { data: status } = useQuery({
+    queryKey: ["status"],
     queryFn: fetchStatus,
-    refetchInterval: 5000
+    refetchInterval: 30000, // Reduced frequency
   });
 
-  const sections = [
-    {
-      title: 'Teams',
-      count: teams?.length || 0,
-      path: '/teams',
-      isLoading: status?.is_updating && status.current_phase === 'teams',
-      isRefetching: isRefetchingTeams,
-      description: 'Browse NBA teams and their standings'
-    },
-    {
-      title: 'Players',
-      count: players?.length || 0,
-      path: '/players',
-      isLoading: status?.is_updating && status.current_phase === 'players',
-      isRefetching: isRefetchingPlayers,
-      description: 'Browse player profiles and statistics'
-    },
-    {
-      title: 'Games',
-      count: games?.length || 0,
-      path: '/games',
-      isLoading: status?.is_updating && status.current_phase === 'games',
-      isRefetching: isRefetchingGames,
-      description: 'View all NBA game results and details'
-    },
-    {
-      title: 'Upcoming Games',
-      count: games?.filter(game => game.status === 'Upcoming').length || 0,
-      path: '/upcoming-games',
-      isLoading: status?.is_updating && status.current_phase === 'games',
-      isRefetching: isRefetchingGames,
-      description: 'Check upcoming NBA game schedules'
-    }
-  ];
+  // Get recent games for highlights
+  const recentGames =
+    games
+      ?.filter((game) => game.status === "Final")
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 3) || [];
 
-  const isAnySectionLoading = sections.some(s => s.isRefetching && (s.count === 0));
+  const upcomingGames =
+    games
+      ?.filter((game) => game.status === "Upcoming")
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .slice(0, 3) || [];
 
   return (
-    <div className="space-y-8 container mx-auto p-4">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold">NBA Stats Dashboard</h1>
-          <p className="text-muted-foreground">
-            Last successful data update: {status?.last_update ? format(new Date(status.last_update), 'MMM d, yyyy HH:mm') : 'Never'}
-          </p>
-          {status?.is_updating && (
-            <div className="mt-2 flex items-center text-sm text-blue-600">
-              <LoadingSpinner size="small" className="mr-2"/>
-              <span>Data update in progress... (Phase: {status.current_phase || 'Initializing'})</span>
-            </div>
-          )}
-          {status?.last_error && !status.is_updating && (
-            <p className="text-sm text-red-500 mt-1">
-              Last update attempt failed: {status.last_error} ({status.last_error_time ? format(new Date(status.last_error_time), 'MMM d, HH:mm') : 'N/A'})
-            </p>
-          )}
-        </div>
+    <div className="space-y-8">
+      {/* Hero Section */}
+      <div className="text-center py-12">
+        <h1 className="text-4xl font-bold mb-4">NBA Stats</h1>
+        <p className="text-xl text-muted-foreground mb-8">
+          Explore teams, players, and games with a clean, simple interface
+        </p>
+
+        {status?.is_updating && (
+          <div
+            className="flex items-center justify-center space-x-2 text-primary"
+            role="status"
+            aria-live="polite"
+          >
+            <LoadingSpinner size="small" />
+            <span>Updating {status.current_phase || "data"}...</span>
+            <span className="sr-only">Data is being updated, please wait</span>
+          </div>
+        )}
       </div>
 
-      {isAnySectionLoading && !status?.is_updating && (
-        <div className="text-center p-10">
-          <LoadingSpinner size="large" />
-          <p className="mt-4 text-lg text-muted-foreground">Loading initial data...</p>
+      {/* Navigation Cards */}
+      <div
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+        role="navigation"
+        aria-label="Main navigation"
+      >
+        <Link
+          to="/teams"
+          className="group bg-card p-6 rounded-lg border hover:border-primary transition-colors"
+        >
+          <div className="text-center">
+            <div className="text-3xl font-bold text-primary mb-2">
+              {teams?.length || 0}
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Teams</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Browse all NBA teams and their rosters
+            </p>
+            <div className="text-primary group-hover:underline">
+              View Teams →
+            </div>
+          </div>
+        </Link>
+
+        <Link
+          to="/players"
+          className="group bg-card p-6 rounded-lg border hover:border-primary transition-colors"
+        >
+          <div className="text-center">
+            <div className="text-3xl font-bold text-primary mb-2">
+              {players?.length || 0}
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Players</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Explore player stats and performance
+            </p>
+            <div className="text-primary group-hover:underline">
+              View Players →
+            </div>
+          </div>
+        </Link>
+
+        <Link
+          to="/games"
+          className="group bg-card p-6 rounded-lg border hover:border-primary transition-colors"
+        >
+          <div className="text-center">
+            <div className="text-3xl font-bold text-primary mb-2">
+              {games?.filter((g) => g.status === "Final").length || 0}
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Games</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              View completed game results and stats
+            </p>
+            <div className="text-primary group-hover:underline">
+              View Games →
+            </div>
+          </div>
+        </Link>
+
+        <Link
+          to="/upcoming-games"
+          className="group bg-card p-6 rounded-lg border hover:border-primary transition-colors"
+        >
+          <div className="text-center">
+            <div className="text-3xl font-bold text-primary mb-2">
+              {upcomingGames?.length || 0}
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Upcoming</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Check upcoming game schedules
+            </p>
+            <div className="text-primary group-hover:underline">
+              View Schedule →
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      {/* Recent Games Highlights */}
+      {recentGames.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-2xl font-bold">Recent Games</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {recentGames.map((game) => (
+              <Link
+                key={game.id}
+                to={`/games/${game.id}`}
+                className="bg-card p-4 rounded-lg border hover:border-primary transition-colors"
+              >
+                <div className="text-sm text-muted-foreground mb-2">
+                  {format(new Date(game.date), "MMM d, yyyy")}
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="text-center">
+                    <div className="font-medium">{game.away_team_name}</div>
+                    <div className="text-2xl font-bold">
+                      {game.away_team_score}
+                    </div>
+                  </div>
+                  <div className="text-muted-foreground">vs</div>
+                  <div className="text-center">
+                    <div className="font-medium">{game.home_team_name}</div>
+                    <div className="text-2xl font-bold">
+                      {game.home_team_score}
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
-        {sections.map((section) => (
-          <Card key={section.path} className="p-6 shadow-lg hover:shadow-xl transition-shadow">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h2 className="text-2xl font-semibold text-primary">{section.title}</h2>
-                <p className="text-muted-foreground text-sm">{section.description}</p>
+      {/* Upcoming Games Preview */}
+      {upcomingGames.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-2xl font-bold">Upcoming Games</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {upcomingGames.map((game) => (
+              <div key={game.id} className="bg-card p-4 rounded-lg border">
+                <div className="text-sm text-muted-foreground mb-2">
+                  {format(new Date(game.date), "MMM d, yyyy 'at' h:mm a")}
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="text-center">
+                    <div className="font-medium">{game.away_team_name}</div>
+                  </div>
+                  <div className="text-muted-foreground">@</div>
+                  <div className="text-center">
+                    <div className="font-medium">{game.home_team_name}</div>
+                  </div>
+                </div>
               </div>
-              {(section.isLoading || (section.isRefetching && section.count === 0)) && !status?.is_updating && <LoadingSpinner size="small" />}
-            </div>
-            
-            <div className="flex justify-between items-center">
-              <span className="text-4xl font-bold">
-                { (section.isRefetching && section.count === 0 && !status?.is_updating) ? '-' : section.count}
-              </span>
-              <Link
-                to={section.path}
-                className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
-              >
-                View All →
-              </Link>
-            </div>
-          </Card>
-        ))}
-      </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Simple status footer */}
+      {status?.last_update && (
+        <div className="text-center text-sm text-muted-foreground border-t pt-6">
+          Data last updated:{" "}
+          {format(new Date(status.last_update), "MMM d, yyyy 'at' h:mm a")}
+        </div>
+      )}
     </div>
   );
 };

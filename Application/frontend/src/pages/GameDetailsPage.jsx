@@ -1,231 +1,245 @@
-import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { format } from 'date-fns'
-import { formatInTimeZone } from 'date-fns-tz'
-import { fetchGame, fetchGameStats } from '../services/api'
-import { LoadingSpinner } from '../components/ui/loading-spinner'
+import { useState } from "react";
+import { useParams, Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { fetchGame, fetchGameStats } from "../services/api";
+import { LoadingSpinner } from "../components/ui/loading-spinner";
+import { SimpleTable } from "../components/simple/SimpleTable";
 
 export default function GameDetailsPage() {
-  const { id } = useParams()
-  const [hideDNP, setHideDNP] = useState(false)
-  const [sortColumn, setSortColumn] = useState('points')
-  const [sortDirection, setSortDirection] = useState('desc')
+  const { id } = useParams();
+  const [hideDNP, setHideDNP] = useState(false);
 
-  const { data: game, isLoading: loadingGame, error: gameError } = useQuery({
-    queryKey: ['game', id],
+  const {
+    data: game,
+    isLoading: loadingGame,
+    error: gameError,
+  } = useQuery({
+    queryKey: ["game", id],
     queryFn: () => fetchGame(id),
     enabled: !!id,
-    retry: 2
-  })
+  });
 
   const { data: stats, isLoading: loadingStats } = useQuery({
-    queryKey: ['gameStats', id],
+    queryKey: ["gameStats", id],
     queryFn: () => fetchGameStats(id),
-    enabled: !!id && game?.status === 'Completed',
-    retry: 2
-  })
-
-  const handleSort = (column) => {
-    if (sortColumn === column) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortColumn(column)
-      setSortDirection('desc')
-    }
-  }
-
-  const sortStats = (stats) => {
-    if (!stats) return []
-    return [...stats].sort((a, b) => {
-      const aValue = a[sortColumn]
-      const bValue = b[sortColumn]
-      return sortDirection === 'asc' ? aValue - bValue : bValue - aValue
-    })
-  }
+    enabled: !!id && game?.status === "Final",
+  });
 
   const formatDate = (dateStr) => {
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return formatInTimeZone(new Date(dateStr), timeZone, "MMM d, yyyy h:mm a 'GMT'XXX");
-  }
+    if (!dateStr) return "TBD";
+    try {
+      return format(new Date(dateStr), "MMMM d, yyyy 'at' h:mm a");
+    } catch {
+      return "TBD";
+    }
+  };
 
-  if (loadingGame || (loadingStats && game?.status === 'Completed')) {
+  const playerColumns = [
+    {
+      key: "player_name",
+      header: "Player",
+      render: (value, stat) => (
+        <div>
+          <div className="font-medium">{value}</div>
+          <div className="text-sm text-muted-foreground">{stat.position}</div>
+        </div>
+      ),
+    },
+    {
+      key: "minutes",
+      header: "MIN",
+      render: (value) => value || "0:00",
+    },
+    {
+      key: "points",
+      header: "PTS",
+      render: (value) => value || 0,
+    },
+    {
+      key: "rebounds",
+      header: "REB",
+      render: (value) => value || 0,
+    },
+    {
+      key: "assists",
+      header: "AST",
+      render: (value) => value || 0,
+    },
+    {
+      key: "steals",
+      header: "STL",
+      render: (value) => value || 0,
+    },
+    {
+      key: "blocks",
+      header: "BLK",
+      render: (value) => value || 0,
+    },
+    {
+      key: "field_goals_made",
+      header: "FG",
+      render: (value, stat) =>
+        `${value || 0}/${stat.field_goals_attempted || 0}`,
+    },
+  ];
+
+  if (loadingGame) {
     return (
-      <div className="flex h-96 items-center justify-center">
+      <div className="flex items-center justify-center h-64">
         <LoadingSpinner size="large" />
       </div>
-    )
+    );
   }
 
-  if (gameError) {
+  if (gameError || !game) {
     return (
-      <div className="flex h-96 items-center justify-center flex-col space-y-4">
-        <div className="text-destructive">Error loading game: {gameError.message}</div>
-        <Link to="/games" className="text-primary hover:underline">&larr; Back to Games</Link>
+      <div className="flex items-center justify-center h-64" role="alert">
+        <div className="text-center p-6 max-w-md">
+          <div className="text-destructive text-xl mb-2">🏀</div>
+          <h2 className="text-lg font-semibold text-destructive mb-2">
+            Game not found
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            {gameError?.message || "The requested game could not be found."}
+          </p>
+          <Link
+            to="/games"
+            className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+          >
+            ← Back to games
+          </Link>
+        </div>
       </div>
-    )
+    );
   }
 
-  if (!game) {
-    return (
-      <div className="flex h-96 items-center justify-center flex-col space-y-4">
-        <div className="text-destructive">Game not found</div>
-        <Link to="/games" className="text-primary hover:underline">&larr; Back to Games</Link>
-      </div>
-    )
-  }
+  // Filter stats by team and optionally hide DNP players
+  const homeStats = stats?.filter((s) => s.team_id === game.home_team_id) || [];
+  const awayStats = stats?.filter((s) => s.team_id === game.away_team_id) || [];
 
-  const allStats = stats || []
-  const filteredStats = hideDNP ? allStats.filter(stat => stat.minutes !== '0:00') : allStats
+  const filteredHomeStats = hideDNP
+    ? homeStats.filter((s) => s.minutes && s.minutes !== "0:00")
+    : homeStats;
+
+  const filteredAwayStats = hideDNP
+    ? awayStats.filter((s) => s.minutes && s.minutes !== "0:00")
+    : awayStats;
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center space-x-4 mb-8">
-        <Link to="/games" className="text-primary hover:underline">&larr; Back to Games</Link>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <Link
+            to="/games"
+            className="text-sm text-primary hover:underline mb-2 inline-block"
+          >
+            ← Back to games
+          </Link>
+          <h1 className="text-3xl font-bold">Game Details</h1>
+          <p className="text-muted-foreground">{formatDate(game.game_date)}</p>
+        </div>
       </div>
 
-      {/* Game Header */}
-      <div className="mb-8 rounded-lg bg-card p-6 shadow-lg">
-        <div className="text-center">
-          <div className="mb-2 text-sm text-muted-foreground">
-            {formatDate(game.game_date_utc)}
+      {/* Game Summary */}
+      <div className="bg-card p-6 rounded-lg border">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-8">
+            {/* Away Team */}
+            <div className="text-center">
+              <div className="text-lg font-semibold">{game.away_team_name}</div>
+              <div className="text-3xl font-bold">
+                {game.status === "Final" ? game.away_team_score || 0 : "-"}
+              </div>
+            </div>
+
+            <div className="text-2xl text-muted-foreground">vs</div>
+
+            {/* Home Team */}
+            <div className="text-center">
+              <div className="text-lg font-semibold">{game.home_team_name}</div>
+              <div className="text-3xl font-bold">
+                {game.status === "Final" ? game.home_team_score || 0 : "-"}
+              </div>
+            </div>
           </div>
-          {game.playoff_round && (
-            <div className="mb-4 text-lg font-semibold text-primary">
-              {game.playoff_round}
+
+          <div className="text-right">
+            <div
+              className={`px-3 py-1 rounded-full text-sm font-medium ${
+                game.status === "Final"
+                  ? "bg-green-100 text-green-800"
+                  : game.status === "In Progress"
+                    ? "bg-blue-100 text-blue-800"
+                    : "bg-gray-100 text-gray-800"
+              }`}
+            >
+              {game.status}
             </div>
-          )}
-          <div className="grid grid-cols-3 items-center gap-4">
-            <div className="text-center">
-              <img 
-                src={game.home_team?.logo_url} 
-                alt={game.home_team?.name}
-                className="mx-auto h-16 w-16 object-contain"
-              />
-              <div className="mt-2 text-lg font-semibold">{game.home_team?.name}</div>
-              {game.status === 'Completed' && (
-                <div className="text-3xl font-bold">{game.home_score}</div>
-              )}
-            </div>
-            <div className="text-xl font-medium text-muted-foreground">
-              {game.status === 'Completed' ? 'Final' : game.status}
-            </div>
-            <div className="text-center">
-              <img 
-                src={game.away_team?.logo_url} 
-                alt={game.away_team?.name}
-                className="mx-auto h-16 w-16 object-contain"
-              />
-              <div className="mt-2 text-lg font-semibold">{game.away_team?.name}</div>
-              {game.status === 'Completed' && (
-                <div className="text-3xl font-bold">{game.away_score}</div>
-              )}
-            </div>
+            {game.period && game.status !== "Final" && (
+              <div className="text-sm text-muted-foreground mt-1">
+                Period {game.period}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Show message for upcoming games */}
-      {game.status === 'Upcoming' && (
-        <div className="text-center py-8">
-          <p className="text-lg text-muted-foreground">
-            This game hasn't started yet. Check back after {formatDate(game.game_date_utc)} for the box score.
-          </p>
-        </div>
-      )}
-
-      {/* Box Score (only for completed games) */}
-      {game.status === 'Completed' && (
-        <>
-          {/* Box Score Controls */}
-          <div className="mb-4 flex items-center justify-between">
-            <label className="flex items-center space-x-2">
+      {/* Player Stats */}
+      {game.status === "Final" && stats && stats.length > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold">Player Statistics</h2>
+            <label className="flex items-center space-x-2 text-sm cursor-pointer">
               <input
                 type="checkbox"
                 checked={hideDNP}
                 onChange={(e) => setHideDNP(e.target.checked)}
-                className="rounded border-gray-300 text-primary focus:ring-primary"
+                className="rounded focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                aria-describedby="hide-dnp-help"
               />
-              <span className="text-sm">Hide DNP Players</span>
+              <span>Hide inactive players</span>
+              <span className="sr-only" id="hide-dnp-help">
+                Toggle to show or hide players who did not play
+              </span>
             </label>
           </div>
 
-          {/* Box Score Table */}
-          <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="p-3 text-left font-semibold">Player</th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('minutes')}
-                  >
-                    MIN
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('points')}
-                  >
-                    PTS
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('rebounds')}
-                  >
-                    REB
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('assists')}
-                  >
-                    AST
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('steals')}
-                  >
-                    STL
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('blocks')}
-                  >
-                    BLK
-                  </th>
-                  <th className="p-3 text-right font-semibold">FG</th>
-                  <th className="p-3 text-right font-semibold">3P</th>
-                  <th className="p-3 text-right font-semibold">FT</th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('plus_minus')}
-                  >
-                    +/-
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortStats(filteredStats).map((stat) => (
-                  <tr key={stat.stat_id} className="border-b last:border-0 hover:bg-muted/50">
-                    <td className="p-3">{stat.player_name}</td>
-                    <td className="p-3 text-right">{stat.minutes}</td>
-                    <td className="p-3 text-right">{stat.points}</td>
-                    <td className="p-3 text-right">{stat.rebounds}</td>
-                    <td className="p-3 text-right">{stat.assists}</td>
-                    <td className="p-3 text-right">{stat.steals}</td>
-                    <td className="p-3 text-right">{stat.blocks}</td>
-                    <td className="p-3 text-right">{stat.fgm}/{stat.fga}</td>
-                    <td className="p-3 text-right">{stat.tpm}/{stat.tpa}</td>
-                    <td className="p-3 text-right">{stat.ftm}/{stat.fta}</td>
-                    <td className={`p-3 text-right ${stat.plus_minus > 0 ? 'text-green-500' : stat.plus_minus < 0 ? 'text-red-500' : ''}`}>
-                      {stat.plus_minus > 0 ? '+' : ''}{stat.plus_minus}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Away Team Stats */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">
+              {game.away_team_name}
+            </h3>
+            <SimpleTable
+              data={filteredAwayStats}
+              columns={playerColumns}
+              loading={loadingStats}
+              emptyMessage="No player statistics available"
+            />
           </div>
-        </>
+
+          {/* Home Team Stats */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">
+              {game.home_team_name}
+            </h3>
+            <SimpleTable
+              data={filteredHomeStats}
+              columns={playerColumns}
+              loading={loadingStats}
+              emptyMessage="No player statistics available"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* No stats message for non-final games */}
+      {game.status !== "Final" && (
+        <div className="text-center py-12 text-muted-foreground">
+          <p>Player statistics will be available when the game is completed.</p>
+        </div>
       )}
     </div>
-  )
+  );
 }

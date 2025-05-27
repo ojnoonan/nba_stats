@@ -3,6 +3,9 @@ services:
     build: ./Application/frontend
     ports:
       - "7779:7779"
+    environment:
+      - PORT=7779
+      - VITE_API_BASE_URL=http://backend:7778
     depends_on:
       backend:
         condition: service_healthy
@@ -12,18 +15,25 @@ services:
 
   backend:
     build: ./Application/backend
-    expose:
-      - "7778"
+    ports:
+      - "7778:7778"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - NBA_STATS_DATA_DIR=/app/data
+      - NBA_STATS_API_DEBUG=${NBA_STATS_API_DEBUG:-false}
+      - NBA_STATS_LOG_LEVEL=${NBA_STATS_LOG_LEVEL:-INFO}
+      - NBA_STATS_SECURITY_SECRET_KEY=${NBA_STATS_SECURITY_SECRET_KEY:-your-secret-key-change-in-production}
+      - NBA_STATS_SECURITY_ADMIN_API_KEY=${NBA_STATS_SECURITY_ADMIN_API_KEY}
     volumes:
       - nba_data:/app/data
-    networks:
-      - nba_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7778/status"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:7778/status"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 15s
+    networks:
+      - nba_network
     restart: unless-stopped
 
 networks:

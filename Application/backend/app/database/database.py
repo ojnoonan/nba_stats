@@ -1,44 +1,78 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from contextlib import contextmanager, asynccontextmanager
 import os
+from contextlib import asynccontextmanager, contextmanager
+from typing import AsyncGenerator
 
-# Use environment variable with fallback for data directory
-DATA_DIR = os.getenv('NBA_STATS_DATA_DIR', '/app/data')
-os.makedirs(DATA_DIR, exist_ok=True)
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.orm.session import Session
 
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/nba_stats.db"
+from app.core.settings import settings
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+# Database configuration using centralized settings
+SQLALCHEMY_DATABASE_URL = settings.database.url
+SQLALCHEMY_DATABASE_FILE_TO_USE = settings.database._get_db_file_path()
+
+
+# Define the Base class for SQLAlchemy models
+class Base(DeclarativeBase):
+    pass
+
+
+# Async engine
+engine = create_async_engine(
+    SQLALCHEMY_DATABASE_URL,
+    echo=settings.database.echo,
 )
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base = declarative_base()
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=True,  # expire state on commit to ensure fresh reads
+    autocommit=False,
+    autoflush=False,
+)
 
-# Database dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# Global variable to allow overriding the session factory during tests
+_session_factory_override = None
 
-@contextmanager
-def get_db_context():
-    """Context manager for synchronous database sessions"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
-@asynccontextmanager
-async def get_async_db():
-    """Async context manager for database sessions"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+def get_session_factory():
+    """Get the current session factory, allowing for test overrides."""
+    return (
+        _session_factory_override
+        if _session_factory_override is not None
+        else AsyncSessionLocal
+    )
+
+
+def set_session_factory_override(factory):
+    """Override the session factory (for testing purposes)."""
+    global _session_factory_override
+    _session_factory_override = factory
+
+
+def clear_session_factory_override():
+    """Clear the session factory override."""
+    global _session_factory_override
+    _session_factory_override = None
+
+
+# Dependency for FastAPI
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+# Initialize database
+async def init_db():
+    """Create all database tables."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

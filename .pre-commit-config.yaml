@@ -1,0 +1,50 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: debug-statements
+
+  - repo: https://github.com/psf/black
+    rev: 24.1.1
+    hooks:
+      - id: black
+        files: ^Application/backend/
+        exclude: ^Application/backend/(alembic/|env/|.*\.egg-info/)
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        files: ^Application/backend/
+        exclude: ^Application/backend/(alembic/|env/|.*\.egg-info/)
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        files: ^Application/backend/
+        exclude: ^Application/backend/(alembic/|env/|.*\.egg-info/)
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        files: ^Application/frontend/
+        exclude: ^Application/frontend/(dist/|node_modules/)
+        types_or: [javascript, jsx, json, css, html]
+
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.0.0-beta.2
+    hooks:
+      - id: eslint
+        files: ^Application/frontend/src/.*\.(js|jsx)$
+        additional_dependencies:
+          - eslint@^8.0.0
+          - '@eslint/js'
+          - eslint-plugin-react-hooks
+          - eslint-plugin-react-refresh

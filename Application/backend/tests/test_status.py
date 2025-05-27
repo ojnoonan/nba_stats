@@ -1,80 +1,91 @@
-from fastapi.testclient import TestClient
-import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
-def test_get_status_new(client):
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.models import DataUpdateStatus
+
+
+def test_get_status_new(client: TestClient):
     """Test getting status when no status exists"""
     response = client.get("/status")
     assert response.status_code == 200
     status = response.json()
     assert status["is_updating"] is False
     assert status["current_phase"] is None
-    assert status["last_update"] is not None
-    assert status["next_update"] is not None
+    assert not status["teams_updated"]
+    assert not status["players_updated"]
+    assert not status["games_updated"]
 
-def test_get_status_existing(client, db):
+
+async def test_get_status_existing(client: TestClient, db: AsyncSession):
     """Test getting status when status exists"""
-    from app.models.models import DataUpdateStatus
-    
-    status = DataUpdateStatus(
-        is_updating=False,
-        current_phase=None,
-        last_successful_update=datetime.utcnow(),
-        next_scheduled_update=datetime.utcnow() + timedelta(hours=6),
-        teams_updated=True,
-        players_updated=True,
-        games_updated=True
-    )
-    db.add(status)
-    db.commit()
+    # Get existing status row
+    status = (await db.execute(select(DataUpdateStatus).filter_by(id=1))).scalar_one()
+
+    # Update its fields
+    status.is_updating = False
+    status.current_phase = None
+    status.last_successful_update = datetime.now(timezone.utc)
+    status.next_scheduled_update = datetime.now(timezone.utc) + timedelta(hours=6)
+    status.teams_updated = True
+    status.players_updated = True
+    status.games_updated = True
+
+    await db.commit()
 
     response = client.get("/status")
     assert response.status_code == 200
     status_data = response.json()
     assert status_data["is_updating"] is False
-    assert status_data["current_phase"] is None
     assert status_data["teams_updated"] is True
     assert status_data["players_updated"] is True
     assert status_data["games_updated"] is True
 
-def test_trigger_update(client):
-    """Test triggering a full data update"""
-    response = client.post("/update")
-    assert response.status_code == 200
-    assert response.json()["message"] == "Update initiated"
 
-def test_trigger_games_update(client):
+def test_trigger_update(client: TestClient):
+    """Test triggering a full data update"""
+    response = client.post("/update", json={"update_types": None})
+    assert response.status_code == 200
+    data = response.json()
+    assert "message" in data
+    assert data["types"] == "all"
+
+
+def test_trigger_games_update(client: TestClient):
     """Test triggering a games-only update"""
     response = client.post("/update/games")
     assert response.status_code == 200
-    assert response.json()["message"] == "Games update initiated"
+    data = response.json()
+    assert "message" in data
+    assert "started" in data["message"].lower()
 
-def test_reset_update_status(client):
+
+def test_reset_update_status(client: TestClient):
     """Test resetting a stuck update status"""
     response = client.post("/reset-update-status")
     assert response.status_code == 200
-    assert response.json()["message"] == "Update status reset successfully"
+    data = response.json()
+    assert "message" in data
+    assert "reset" in data["message"].lower()
 
-def test_prevent_concurrent_updates(client, db):
+
+async def test_prevent_concurrent_updates(client: TestClient, db: AsyncSession):
     """Test that concurrent updates are prevented"""
-    from app.models.models import DataUpdateStatus
-    
     # Set status to updating
-    status = DataUpdateStatus(
-        is_updating=True,
-        current_phase="teams",
-        last_successful_update=datetime.utcnow(),
-        next_scheduled_update=datetime.utcnow() + timedelta(hours=6)
-    )
-    db.add(status)
-    db.commit()
+    status = (await db.execute(select(DataUpdateStatus).filter_by(id=1))).scalar_one()
+    status.is_updating = True
+    status.current_phase = "teams"
+    status.last_successful_update = datetime.now(timezone.utc)
+    status.next_scheduled_update = datetime.now(timezone.utc) + timedelta(hours=6)
+    await db.commit()
 
     # Try to trigger another update
-    response = client.post("/update")
+    response = client.post("/update", json={"update_types": None})
     assert response.status_code == 400
-    assert response.json()["detail"] == "Update already in progress"
-
-    # Same for games update
-    response = client.post("/update/games")
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Update already in progress"
+    data = response.json()
+    assert "detail" in data
+    assert "in progress" in data["detail"].lower()

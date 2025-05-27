@@ -1,84 +1,79 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
 import logging
+from typing import Optional
 
-from app.models.models import Team, Player
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database.database import get_db
+from app.models.models import Player, Team
+from app.utils.query_utils import paginate_query
+from app.utils.response_utils import format_player_response, format_team_response
+from app.utils.router_utils import RouterUtils
 
-router = APIRouter(
-    prefix="/search",
-    tags=["search"]
-)
+router = APIRouter(prefix="/search", tags=["search"])
 
 logger = logging.getLogger(__name__)
 
+
 @router.get("")
 async def search(
-    term: str = Query(..., min_length=2),
-    db: Session = Depends(get_db)
+    q: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, le=100),
+    include_inactive: bool = Query(default=False),
 ):
-    """Search for teams and players matching the query term"""
-    try:
-        # Get all teams that match the search term
-        teams = db.query(Team).filter(
-            or_(
-                Team.name.ilike(f"%{term}%"),
-                Team.abbreviation.ilike(f"%{term}%")
-            )
-        ).all()
+    """Search for teams or players by name"""
 
-        # Get all players that match the search term
-        players = db.query(Player).filter(
+    if not q or q.strip() == "":
+        raise HTTPException(status_code=422, detail="Search query cannot be empty")
+
+    if len(q) < 2:
+        raise HTTPException(
+            status_code=422,
+            detail="Search query must have a minimum length of 2 characters",
+        )
+
+    term = q
+    try:
+        # Search for teams
+        team_stmt = select(Team).filter(
+            or_(Team.name.ilike(f"%{term}%"), Team.abbreviation.ilike(f"%{term}%"))
+        )
+        # Apply pagination
+        team_stmt = paginate_query(team_stmt, skip, limit)
+
+        team_result = await db.execute(team_stmt)
+        teams = team_result.scalars().all()
+
+        # Search for players
+        player_stmt = select(Player).filter(
             or_(
                 Player.full_name.ilike(f"%{term}%"),
                 Player.first_name.ilike(f"%{term}%"),
-                Player.last_name.ilike(f"%{term}%")
+                Player.last_name.ilike(f"%{term}%"),
             )
-        ).all()
+        )
 
-        # Group players by team
-        results = []
-        team_dict = {}
+        # Filter for active players only if not including inactive
+        if not include_inactive:
+            player_stmt = player_stmt.filter(Player.is_active == True)
 
-        # First add teams with direct matches
-        for team in teams:
-            team_dict[team.team_id] = {
-                "team": {
-                    "team_id": team.team_id,
-                    "name": team.name,
-                    "logo_url": team.logo_url
-                },
-                "players": []
-            }
-            results.append(team_dict[team.team_id])
+        # Apply pagination
+        player_stmt = paginate_query(player_stmt, skip, limit)
 
-        # Then add players under their teams
-        for player in players:
-            # If player's team wasn't a direct match, add it
-            if player.current_team_id not in team_dict:
-                team = db.query(Team).filter(Team.team_id == player.current_team_id).first()
-                if team:
-                    team_dict[team.team_id] = {
-                        "team": {
-                            "team_id": team.team_id,
-                            "name": team.name,
-                            "logo_url": team.logo_url
-                        },
-                        "players": []
-                    }
-                    results.append(team_dict[team.team_id])
-            
-            # Add player to their team's group
-            if player.current_team_id in team_dict:
-                team_dict[player.current_team_id]["players"].append({
-                    "player_id": player.player_id,
-                    "full_name": player.full_name,
-                    "is_traded_flag": player.traded_date is not None
-                })
+        player_result = await db.execute(player_stmt)
+        players = player_result.scalars().all()
+
+        # Return a dictionary with separate lists for teams and players using format functions
+        results = {
+            "teams": [format_team_response(team) for team in teams],
+            "players": [format_player_response(player) for player in players],
+        }
 
         return results
 
     except Exception as e:
-        logger.error(f"Error in search: {str(e)}")
+        logger.error(f"Error performing search: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

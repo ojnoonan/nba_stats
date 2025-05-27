@@ -1,6 +1,9 @@
-from fastapi.testclient import TestClient
-import pytest
 from datetime import datetime
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+
 
 def test_get_teams(client, test_team):
     """Test getting all teams"""
@@ -11,6 +14,7 @@ def test_get_teams(client, test_team):
     assert teams[0]["team_id"] == test_team.team_id
     assert teams[0]["name"] == test_team.name
     assert teams[0]["abbreviation"] == test_team.abbreviation
+
 
 def test_get_team(client, test_team):
     """Test getting a specific team"""
@@ -25,17 +29,28 @@ def test_get_team(client, test_team):
     assert team["wins"] == test_team.wins
     assert team["losses"] == test_team.losses
 
+
 def test_get_nonexistent_team(client):
     """Test getting a team that doesn't exist"""
     response = client.get("/teams/999")
     assert response.status_code == 404
     assert response.json()["detail"] == "Team not found"
 
-def test_update_team(client, test_team):
+
+@patch("app.routers.teams.NBADataService")
+def test_update_team(mock_nba_data_service, client, test_team):
     """Test triggering a team update"""
+    # Set up the mock service
+    mock_service = AsyncMock()
+    mock_nba_data_service.return_value = mock_service
+
     response = client.post(f"/teams/{test_team.team_id}/update")
     assert response.status_code == 200
-    assert response.json()["message"] == f"Update initiated for team {test_team.team_id}"
+    assert response.json()["message"] == f"Team {test_team.team_id} update initiated"
+
+    # Verify the service was called with the correct team_id
+    mock_service.update_team_players.assert_called_once_with(test_team.team_id)
+
 
 def test_update_nonexistent_team(client):
     """Test triggering an update for a nonexistent team"""

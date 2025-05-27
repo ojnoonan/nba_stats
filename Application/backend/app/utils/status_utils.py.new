@@ -1,0 +1,193 @@
+from datetime import datetime, timezone
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from typing import Optional
+from app.models.models import DataUpdateStatus
+
+async def get_or_create_status(db: AsyncSession) -> DataUpdateStatus:
+    """Get or create the status record"""
+    stmt = select(DataUpdateStatus).filter_by(id=1)
+    result = await db.execute(stmt)
+    status = result.scalar_one_or_none()
+
+    if not status:
+        status = DataUpdateStatus(
+            id=1,
+            is_updating=False,
+            cancellation_requested=False,
+            teams_updated=False,
+            players_updated=False,
+            games_updated=False,
+            teams_percent_complete=0,
+            players_percent_complete=0,
+            games_percent_complete=0,
+            current_phase=None,
+            current_detail=None,
+            components={}
+        )
+        db.add(status)
+        await db.commit()
+        await db.refresh(status)
+
+    return status
+
+async def initialize_status(component: str, db: AsyncSession) -> None:
+    """Initialize status for a component update"""
+    # Get the current status
+    stmt = select(DataUpdateStatus).filter_by(id=1)
+    result = await db.execute(stmt)
+    status = result.scalar_one_or_none()
+    if not status:
+        return
+
+    # Ensure components dictionary exists
+    if not isinstance(status.components, dict):
+        status.components = {}
+
+    # Reset status
+    status.is_updating = True
+    status.current_phase = component
+    status.current_detail = "Starting update..."
+    status.cancellation_requested = False
+    status.last_error = None
+    status.last_error_time = None
+
+    # Reset component-specific status
+    setattr(status, f"{component}_updated", False)
+    setattr(status, f"{component}_percent_complete", 0)
+    setattr(status, f"{component}_last_update", None)
+
+    # Initialize component status
+    status.components[component] = {
+        "updated": False,
+        "percent_complete": 0,
+        "last_update": None,
+        "last_error": None
+    }
+
+    await db.commit()
+    await db.refresh(status)
+
+async def update_progress(component: str, processed: int, total: int, db: AsyncSession) -> None:
+    """Update component progress"""
+    if total <= 0:
+        return
+
+    # Get the current status
+    stmt = select(DataUpdateStatus).filter_by(id=1)
+    result = await db.execute(stmt)
+    status = result.scalar_one_or_none()
+    if not status:
+        return
+
+    # Ensure components dictionary exists
+    if not isinstance(status.components, dict):
+        status.components = {}
+    if component not in status.components:
+        status.components[component] = {}
+
+    # Calculate progress
+    percent_complete = min(100, int((processed / total) * 100))
+
+    # Update progress
+    setattr(status, f"{component}_percent_complete", percent_complete)
+    status.current_detail = f"Processed {processed}/{total} items"
+
+    status.components[component].update({
+        "percent_complete": percent_complete,
+        "last_error": None  # Clear any errors
+    })
+
+    # Mark as complete if at 100%
+    if percent_complete >= 100:
+        now = datetime.now(timezone.utc)
+        setattr(status, f"{component}_updated", True)
+        setattr(status, f"{component}_last_update", now)
+        status.components[component].update({
+            "updated": True,
+            "last_update": now.isoformat()
+        })
+
+    await db.commit()
+    await db.refresh(status)
+
+async def finalize_component(component: str, db: AsyncSession) -> None:
+    """Finalize a component update"""
+    # Get the current status
+    stmt = select(DataUpdateStatus).filter_by(id=1)
+    result = await db.execute(stmt)
+    status = result.scalar_one_or_none()
+    if not status:
+        return
+
+    # Get current time
+    now = datetime.now(timezone.utc)
+
+    # Update component status
+    setattr(status, f"{component}_updated", True)
+    setattr(status, f"{component}_last_update", now)
+    setattr(status, f"{component}_percent_complete", 100)
+
+    # Update status fields
+    status.is_updating = False
+    status.current_phase = None
+    status.current_detail = f"{component.capitalize()} update complete"
+    status.last_error = None
+    status.last_error_time = None
+
+    # Ensure components dictionary exists
+    if not isinstance(status.components, dict):
+        status.components = {}
+    if component not in status.components:
+        status.components[component] = {}
+
+    # Update component status
+    status.components[component].update({
+        "updated": True,
+        "percent_complete": 100,
+        "last_update": now.isoformat(),
+        "last_error": None
+    })
+
+    await db.commit()
+    await db.refresh(status)
+
+async def handle_component_error(component: str, error_msg: str, db: AsyncSession) -> None:
+    """Handle a component error"""
+    # Get the current status
+    stmt = select(DataUpdateStatus).filter_by(id=1)
+    result = await db.execute(stmt)
+    status = result.scalar_one_or_none()
+    if not status:
+        return
+
+    # Get current time
+    now = datetime.now(timezone.utc)
+
+    # Update status fields
+    status.is_updating = False
+    status.current_phase = None
+    status.last_error = error_msg
+    status.last_error_time = now
+    status.cancellation_requested = False
+
+    # Reset component-specific status
+    setattr(status, f"{component}_updated", False)
+    setattr(status, f"{component}_percent_complete", 0)
+
+    # Ensure components dictionary exists
+    if not isinstance(status.components, dict):
+        status.components = {}
+    if component not in status.components:
+        status.components[component] = {}
+
+    # Update component status
+    status.components[component].update({
+        "updated": False,
+        "percent_complete": 0,
+        "last_update": now.isoformat(),
+        "last_error": error_msg
+    })
+
+    await db.commit()
+    await db.refresh(status)

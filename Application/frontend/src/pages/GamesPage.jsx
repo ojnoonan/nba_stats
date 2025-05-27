@@ -1,219 +1,183 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { format } from 'date-fns'
-import { formatInTimeZone } from 'date-fns-tz'
-import { fetchGames, fetchTeams, fetchStatus, triggerGamesUpdate } from '../services/api'
-import { LoadingSpinner } from '../components/ui/loading-spinner'
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { format } from "date-fns";
+import { fetchGames, fetchTeams } from "../services/api";
+import { LoadingSpinner } from "../components/ui/loading-spinner";
+import { SimpleTable } from "../components/simple/SimpleTable";
+import { optimizedNavigate } from "../utils/performance";
 
 const GamesPage = () => {
-  const queryClient = useQueryClient()
-
-  const { data: status } = useQuery({
-    queryKey: ['status'],
-    queryFn: fetchStatus
-  })
-
-  const { 
-    data: games, 
-    isLoading: gamesLoading, 
+  const {
+    data: games,
+    isLoading: gamesLoading,
     error: gamesError,
-    refetch: refetchGames,
-    isFetching: isRefetching
   } = useQuery({
-    queryKey: ['games'],
-    queryFn: () => fetchGames()
-  })
+    queryKey: ["games"],
+    queryFn: () => fetchGames(),
+  });
 
   const { data: teams } = useQuery({
-    queryKey: ['teams'],
-    queryFn: fetchTeams
-  })
-
-  const handleRefresh = async () => {
-    try {
-      await triggerGamesUpdate()
-      await refetchGames()
-      await queryClient.invalidateQueries({ queryKey: ['status'] })
-    } catch (error) {
-      console.error('Error refreshing games:', error)
-    }
-  }
+    queryKey: ["teams"],
+    queryFn: fetchTeams,
+  });
 
   const formatGameTime = (dateStr) => {
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return formatInTimeZone(new Date(dateStr), timeZone, "h:mm a 'GMT'XXX");
-  }
+    if (!dateStr) return "TBD";
+    try {
+      const date = new Date(dateStr);
+      return format(date, "MMM d, h:mm a");
+    } catch {
+      return "TBD";
+    }
+  };
 
-  if (gamesLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <LoadingSpinner size="large" className="text-primary" />
-        <div className="text-muted-foreground">
-          {status?.is_updating ? (
-            <span>Loading games data...</span>
-          ) : (
-            <span>Loading...</span>
-          )}
+  const getTeamName = (teamId) => {
+    const team = teams?.find((t) => t.id === teamId);
+    return team ? team.abbreviation : "TBD";
+  };
+
+  const columns = [
+    {
+      key: "game_date",
+      header: "Date & Time",
+      render: (value) => formatGameTime(value),
+    },
+    {
+      key: "matchup",
+      header: "Matchup",
+      sortable: false,
+      render: (value, game) => (
+        <div className="flex items-center justify-center space-x-2">
+          <span className="font-medium">{getTeamName(game.away_team_id)}</span>
+          <span className="text-muted-foreground">@</span>
+          <span className="font-medium">{getTeamName(game.home_team_id)}</span>
         </div>
-      </div>
-    )
-  }
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (value) => {
+        const statusMap = {
+          Final: "bg-green-100 text-green-800",
+          "In Progress": "bg-blue-100 text-blue-800",
+          Upcoming: "bg-gray-100 text-gray-800",
+          Postponed: "bg-red-100 text-red-800",
+        };
 
-  if (!games?.length) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <p className="text-muted-foreground">No games found</p>
-        <button
-          onClick={() => refetchGames()}
-          className="text-primary hover:underline"
+        const className = statusMap[value] || "bg-gray-100 text-gray-800";
+
+        return (
+          <span
+            className={`px-2 py-1 rounded-full text-xs font-medium ${className}`}
+          >
+            {value || "Unknown"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "score",
+      header: "Score",
+      sortable: false,
+      render: (value, game) => {
+        if (
+          game.status === "Final" &&
+          game.away_team_score !== null &&
+          game.home_team_score !== null
+        ) {
+          return (
+            <div className="text-center">
+              <span className="font-medium">
+                {game.away_team_score} - {game.home_team_score}
+              </span>
+            </div>
+          );
+        }
+        return <span className="text-muted-foreground">-</span>;
+      },
+    },
+    {
+      key: "actions",
+      header: "",
+      sortable: false,
+      render: (value, game) => (
+        <Link
+          to={`/games/${game.id}`}
+          className="text-primary hover:underline text-sm"
         >
-          Refresh
-        </button>
-      </div>
-    )
-  }
+          View Details
+        </Link>
+      ),
+    },
+  ];
+
+  // Filter to only show completed and in-progress games
+  const filteredGames =
+    games?.filter(
+      (game) => game.status === "Final" || game.status === "In Progress",
+    ) || [];
+
+  // Sort by most recent first
+  const sortedGames = [...filteredGames].sort((a, b) => {
+    const dateA = new Date(a.game_date);
+    const dateB = new Date(b.game_date);
+    return dateB - dateA;
+  });
 
   if (gamesError) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <p className="text-destructive">Error loading games: {gamesError.message}</p>
-        <button
-          onClick={() => queryClient.invalidateQueries({ queryKey: ['games'] })}
-          className="text-primary hover:underline"
-        >
-          Try again
-        </button>
-      </div>
-    )
-  }
-
-  const getTeamById = (teamId) => teams?.find(t => t.team_id === teamId)
-
-  const groupGamesByDate = (games) => {
-    const grouped = {}
-    games?.forEach(game => {
-      const date = format(new Date(game.game_date_utc), 'yyyy-MM-dd')
-      if (!grouped[date]) grouped[date] = []
-      grouped[date].push(game)
-    })
-    
-    // Sort the dates in descending order (newest first)
-    const sortedDates = Object.keys(grouped).sort((a, b) => {
-      return new Date(b) - new Date(a)
-    })
-    
-    // Create a new object with sorted dates
-    const sortedGames = {}
-    sortedDates.forEach(date => {
-      sortedGames[date] = grouped[date]
-    })
-    
-    return sortedGames
-  }
-
-  const groupedGames = groupGamesByDate(games)
-
-  return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">NBA Games</h1>
-        <div className="flex items-center space-x-4">
-          {status?.is_updating && status.current_phase === 'games' && (
-            <div className="flex items-center space-x-2 text-primary">
-              <LoadingSpinner size="small" />
-              <span>Updating games...</span>
-            </div>
-          )}
+      <div className="flex items-center justify-center h-64" role="alert">
+        <div className="text-center p-6 max-w-md">
+          <div className="text-destructive text-xl mb-2">🏀</div>
+          <h2 className="text-lg font-semibold text-destructive mb-2">
+            Failed to load games
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            {gamesError.message}
+          </p>
           <button
-            onClick={handleRefresh}
-            disabled={isRefetching || status?.is_updating}
-            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
-            title="Refresh games"
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+            aria-label="Retry loading games"
           >
-            <svg
-              className={`w-5 h-5 ${isRefetching ? 'animate-spin' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
+            Try Again
           </button>
         </div>
       </div>
+    );
+  }
 
-      {Object.entries(groupedGames).map(([date, dateGames]) => (
-        <div key={date} className="space-y-4">
-          <h2 className="text-xl font-semibold">
-            {format(new Date(date), 'EEEE, MMMM d, yyyy')}
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {dateGames.map((game) => {
-              const homeTeam = getTeamById(game.home_team_id)
-              const awayTeam = getTeamById(game.away_team_id)
-
-              return (
-                <Link
-                  key={game.game_id}
-                  to={`/games/${game.game_id}`}
-                  className="group relative overflow-hidden rounded-lg border bg-card p-6 hover:border-primary transition-colors"
-                >
-                  {game.playoff_round && (
-                    <div className="absolute top-2 right-2 bg-primary text-primary-foreground px-3 py-1 rounded-full text-sm font-medium">
-                      {game.playoff_round}
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center">
-                    <div className="space-y-4 flex-1">
-                      <div className="flex items-center space-x-3">
-                        <img
-                          src={awayTeam?.logo_url}
-                          alt={awayTeam?.name}
-                          className="h-8 w-8 object-contain"
-                        />
-                        <span className="font-semibold">{awayTeam?.name}</span>
-                        {game.status === 'Completed' && (
-                          <span className="text-lg">{game.away_score}</span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center space-x-3">
-                        <img
-                          src={homeTeam?.logo_url}
-                          alt={homeTeam?.name}
-                          className="h-8 w-8 object-contain"
-                        />
-                        <span className="font-semibold">{homeTeam?.name}</span>
-                        {game.status === 'Completed' && (
-                          <span className="text-lg">{game.home_score}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className="text-sm text-muted-foreground">
-                        {formatGameTime(game.game_date_utc)}
-                      </div>
-                      <div className="text-sm font-medium mt-1">
-                        {game.status}
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">NBA Games</h1>
+          <p className="text-muted-foreground">
+            Completed and in-progress games • Click to view game details
+          </p>
         </div>
-      ))}
-    </div>
-  )
-}
+        {sortedGames && sortedGames.length > 0 && (
+          <div className="text-sm text-muted-foreground" aria-live="polite">
+            {sortedGames.length} games
+          </div>
+        )}
+      </div>
 
-export default GamesPage
+      <SimpleTable
+        data={sortedGames}
+        columns={columns}
+        loading={gamesLoading}
+        emptyMessage="No games found"
+        onRowClick={(game) => {
+          optimizedNavigate(navigate, `/games/${game.id}`);
+        }}
+        mobileBreakpoint="md"
+        className="shadow-sm"
+        aria-label="NBA games table"
+      />
+    </div>
+  );
+};
+
+export default GamesPage;

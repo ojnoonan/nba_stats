@@ -9,99 +9,304 @@
 
     --card: 224 71% 4%;
     --card-foreground: 213 31% 91%;
- 
+
     --popover: 224 71% 4%;
     --popover-foreground: 213 31% 91%;
- 
+
     --primary: 210 40% 98%;
     --primary-foreground: 222.2 47.4% 1.2%;
- 
+
     --secondary: 222.2 47.4% 11.2%;
     --secondary-foreground: 210 40% 98%;
- 
+
     --muted: 223 47% 11%;
     --muted-foreground: 215.4 16.3% 56.9%;
- 
+
     --accent: 216 34% 17%;
     --accent-foreground: 210 40% 98%;
- 
+
     --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
- 
+
     --border: 216 34% 17%;
     --input: 216 34% 17%;
     --ring: 216 34% 17%;
- 
+
     --radius: 0.75rem;
   }
 }
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
   body {
-    @apply bg-background text-foreground;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+
+  /* User Preference Classes */
+
+  /* High Contrast Mode */
+  .high-contrast {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 100%;
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 80%;
+    --border: 0 0% 30%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 0%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 100%;
+  }
+
+  .high-contrast * {
+    border-color: #ffffff !important;
+  }
+
+  .high-contrast .text-muted-foreground {
+    color: #cccccc !important;
+  }
+
+  /* Large Text Mode */
+  .large-text {
+    font-size: 110%;
+  }
+
+  .large-text h1 {
+    font-size: 2.5rem;
+  }
+  .large-text h2 {
+    font-size: 2rem;
+  }
+  .large-text h3 {
+    font-size: 1.5rem;
+  }
+  .large-text .text-sm {
+    font-size: 1rem;
+  }
+  .large-text .text-xs {
+    font-size: 0.875rem;
+  }
+  .large-text button {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+  }
+  .large-text input {
+    padding: 0.75rem;
+    font-size: 1rem;
+  }
+
+  /* Reduced Motion */
+  .reduce-motion * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* No Animations */
+  .no-animations * {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Accessibility focus improvements */
+  .high-contrast *:focus,
+  .large-text *:focus {
+    outline: 3px solid #ffffff !important;
+    outline-offset: 2px !important;
+  }
+
+  /* Density Classes */
+
+  /* Compact Density */
+  .density-compact {
+    --spacing-unit: 0.5;
+  }
+
+  .density-compact .p-4 {
+    padding: 0.5rem;
+  }
+  .density-compact .p-6 {
+    padding: 0.75rem;
+  }
+  .density-compact .py-6 {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+  .density-compact .px-4 {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  .density-compact .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.5rem;
+  }
+  .density-compact .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 1rem;
+  }
+  .density-compact .space-y-8 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 1.5rem;
+  }
+  .density-compact .gap-4 {
+    gap: 0.5rem;
+  }
+  .density-compact .gap-6 {
+    gap: 0.75rem;
+  }
+  .density-compact .h-16 {
+    height: 3rem;
+  }
+
+  /* Comfortable Density (default) */
+  .density-comfortable {
+    --spacing-unit: 1;
+  }
+
+  /* Spacious Density */
+  .density-spacious {
+    --spacing-unit: 1.5;
+  }
+
+  .density-spacious .p-4 {
+    padding: 1.5rem;
+  }
+  .density-spacious .p-6 {
+    padding: 2rem;
+  }
+  .density-spacious .py-6 {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+  }
+  .density-spacious .px-4 {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+  .density-spacious .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 1.5rem;
+  }
+  .density-spacious .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 2rem;
+  }
+  .density-spacious .space-y-8 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 2.5rem;
+  }
+  .density-spacious .gap-4 {
+    gap: 1.5rem;
+  }
+  .density-spacious .gap-6 {
+    gap: 2rem;
+  }
+  .density-spacious .h-16 {
+    height: 5rem;
   }
 }
 
 @layer components {
   .glossy-card {
-    @apply relative overflow-hidden rounded-lg bg-gradient-to-br from-accent to-card p-6 shadow-lg;
-    &:before {
-      content: '';
-      @apply absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent;
-      @apply opacity-0 group-hover:opacity-100 transition-opacity duration-300;
-      background-size: 200% 100%;
-      animation: gloss 2s linear infinite;
-    }
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    background: linear-gradient(
+      to bottom right,
+      hsl(var(--accent)),
+      hsl(var(--card))
+    );
+    padding: 1.5rem;
+    box-shadow:
+      0 10px 15px -3px rgb(0 0 0 / 0.1),
+      0 4px 6px -4px rgb(0 0 0 / 0.1);
+  }
+  .glossy-card:before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to right,
+      transparent,
+      rgba(255, 255, 255, 0.1),
+      transparent
+    );
+    opacity: 0;
+    transition: opacity 0.3s;
+    background-size: 200% 100%;
+    animation: gloss 2s linear infinite;
+  }
+  .glossy-card:hover:before {
+    opacity: 1;
   }
 
   .nav-link {
-    @apply relative px-4 py-2 text-foreground/90 transition-colors hover:text-foreground;
-    &:after {
-      content: '';
-      @apply absolute bottom-0 left-0 h-0.5 w-0 bg-primary transition-all duration-300;
-    }
-    &:hover:after {
-      @apply w-full;
-    }
+    position: relative;
+    padding: 0.5rem 1rem;
+    color: hsl(var(--foreground) / 0.9);
+    transition: color 0.3s;
+  }
+  .nav-link:after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 0.125rem;
+    width: 0;
+    background: hsl(var(--primary));
+    transition: all 0.3s;
+  }
+  .nav-link:hover {
+    color: hsl(var(--foreground));
+  }
+  .nav-link:hover:after {
+    width: 100%;
   }
 
   .stat-value {
-    @apply text-2xl font-bold text-primary;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: hsl(var(--primary));
     text-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
   }
 
   .stat-card {
-    @apply p-4 rounded-lg bg-card border border-border/50 hover:border-primary/50 transition-colors;
-    @apply transition-all duration-300;
-    &:hover {
-      @apply transform -translate-y-1 shadow-lg shadow-primary/10;
-      .stat-value {
-        @apply scale-110 transform;
-      }
-    }
+    padding: 1rem;
+    border-radius: 0.5rem;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border) / 0.5);
+    transition: all 0.3s;
+  }
+  .stat-card:hover {
+    border-color: hsl(var(--primary) / 0.5);
+    transform: translateY(-0.25rem);
+    box-shadow: 0 10px 15px -3px hsl(var(--primary) / 0.1);
+  }
+  .stat-card:hover .stat-value {
+    transform: scale(1.1);
   }
 
   /* Interactive element hover effects */
   .player-card {
-    @apply transform transition-all duration-300 ease-in-out hover:scale-[1.02] hover:shadow-lg;
-    &:hover .player-image {
-      @apply ring-2 ring ring-primary/50;
-    }
+    transform: scale(1);
+    transition: all 0.3s ease-in-out;
+  }
+  .player-card:hover {
+    transform: scale(1.02);
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  }
+  .player-card:hover .player-image {
+    box-shadow: 0 0 0 2px hsl(var(--primary) / 0.5);
   }
 
   .team-logo {
-    @apply transition-transform duration-300 ease-in-out;
-    &:hover {
-      @apply scale-110;
-    }
+    transition: transform 0.3s ease-in-out;
+  }
+  .team-logo:hover {
+    transform: scale(1.1);
   }
 
   /* Expanded content animations */
   .expanded-content {
-    @apply transition-all duration-300;
+    transition: all 0.3s;
     animation: slideDown 0.3s ease-out;
   }
 
@@ -126,24 +331,30 @@
   }
 
   .team-card {
-    @apply relative overflow-hidden rounded-lg border border-border/50 bg-card p-4 transition-all duration-300;
-    
-    &:hover {
-      @apply border-transparent scale-105;
-      border-radius: 9999px;
-      
-      .shine-effect {
-        animation: shine 1s forwards;
-      }
-    }
-    
-    &.loading {
-      @apply opacity-80;
-    }
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    border: 1px solid hsl(var(--border) / 0.5);
+    background: hsl(var(--card));
+    padding: 1rem;
+    transition: all 0.3s;
   }
-  
+  .team-card:hover {
+    border-color: transparent;
+    transform: scale(1.05);
+    border-radius: 9999px;
+  }
+  .team-card:hover .shine-effect {
+    animation: shine 1s forwards;
+  }
+  .team-card.loading {
+    opacity: 0.8;
+  }
+
   .shine-effect {
-    @apply absolute inset-0 pointer-events-none;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
     background: linear-gradient(
       90deg,
       transparent 0%,
@@ -157,5 +368,37 @@
     100% {
       transform: translateX(100%);
     }
+  }
+}
+
+@layer base {
+  /* Skip to content link */
+  .skip-link {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    padding: 0.5rem 1rem;
+    z-index: 50;
+    transform: translateY(-100%);
+    transition: transform 0.3s;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
+  .skip-link:focus {
+    clip: auto;
+    clip-path: none;
+    height: auto;
+    overflow: visible;
+    position: absolute;
+    white-space: normal;
+    width: auto;
+    transform: translateY(0);
   }
 }

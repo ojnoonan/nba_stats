@@ -29,6 +29,29 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .env.local
+
+# Database Files
+*.db
+*.db-journal
+*.db.bak*
+*.db.backup*
+*nba_stats.db
+*nba.db
+*.sqlite
+*.sqlite3
+
+# But keep the data directory structure
+!Application/backend/data/.gitkeep
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
 .env.development.local
 .env.test.local
 .env.production.local
@@ -42,6 +65,13 @@ dist/
 # Database
 *.db
 *.sqlite3
+*.db.bak
+*.sqlite3.bak
+# But keep the data directory structure
+!Application/backend/data/
+Application/backend/data/*.db
+Application/backend/data/*.sqlite3
+Application/backend/data/*.db.bak
 
 # IDE
 .idea/

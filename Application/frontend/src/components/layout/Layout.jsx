@@ -1,4 +1,4 @@
-import NavigationBar from '../navigation/NavigationBar'
+import NavigationBar from "../navigation/NavigationBar";
 
 export function Layout({ children }) {
   return (
@@ -13,5 +13,5 @@ export function Layout({ children }) {
         </div>
       </footer>
     </div>
-  )
+  );
 }

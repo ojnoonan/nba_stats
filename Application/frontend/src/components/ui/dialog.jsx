@@ -1,5 +1,5 @@
-import { Fragment } from 'react'
-import { Dialog as HeadlessDialog, Transition } from '@headlessui/react'
+import { Fragment } from "react";
+import { Dialog as HeadlessDialog, Transition } from "@headlessui/react";
 
 export function Dialog({ isOpen, onClose, children }) {
   return (
@@ -28,8 +28,8 @@ export function Dialog({ isOpen, onClose, children }) {
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <HeadlessDialog.Panel 
-                className="w-full max-w-md transform overflow-hidden rounded-lg bg-card text-card-foreground p-6 shadow-xl transition-all 
+              <HeadlessDialog.Panel
+                className="w-full max-w-md transform overflow-hidden rounded-lg bg-card text-card-foreground p-6 shadow-xl transition-all
                 animate-fade-in animate-slide-up"
               >
                 {children}
@@ -39,25 +39,25 @@ export function Dialog({ isOpen, onClose, children }) {
         </div>
       </HeadlessDialog>
     </Transition>
-  )
+  );
 }
 
-Dialog.Title = function DialogTitle({ children, className = '' }) {
+Dialog.Title = function DialogTitle({ children, className = "" }) {
   return (
     <HeadlessDialog.Title
       className={`text-lg font-medium leading-6 text-primary mb-4 ${className}`}
     >
       {children}
     </HeadlessDialog.Title>
-  )
-}
+  );
+};
 
-Dialog.Description = function DialogDescription({ children, className = '' }) {
+Dialog.Description = function DialogDescription({ children, className = "" }) {
   return (
     <HeadlessDialog.Description
       className={`text-sm text-muted-foreground mb-4 ${className}`}
     >
       {children}
     </HeadlessDialog.Description>
-  )
-}
+  );
+};

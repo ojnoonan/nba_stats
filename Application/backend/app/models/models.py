@@ -1,123 +1,288 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, UniqueConstraint
-from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, TypedDict, Union, cast
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database.database import Base
 
-class Team(Base):
-    __tablename__ = "teams"
 
-    team_id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    abbreviation = Column(String, nullable=False, unique=True)
-    conference = Column(String)
-    division = Column(String)
-    wins = Column(Integer, default=0)
-    losses = Column(Integer, default=0)
-    logo_url = Column(String)
-    loading_progress = Column(Integer, default=0)  # Progress percentage for roster loading
-    roster_loaded = Column(Boolean, default=False)  # Flag to indicate if roster is fully loaded
-    games_loaded = Column(Boolean, default=False)  # Flag to indicate if games are fully loaded
-    last_updated = Column(DateTime, default=datetime.utcnow)
+def serialize_datetime(dt: Optional[datetime]) -> Optional[str]:
+    """Convert datetime to ISO format string, or None if input is None."""
+    if not dt:
+        return None
+    return dt.isoformat() if dt.tzinfo else dt.replace(tzinfo=timezone.utc).isoformat()
 
-    # Relationships - specify foreign keys explicitly
-    players = relationship("Player", back_populates="team", foreign_keys="Player.current_team_id")
-    previous_players = relationship("Player", foreign_keys="Player.previous_team_id")
-    home_games = relationship("Game", foreign_keys="Game.home_team_id", back_populates="home_team")
-    away_games = relationship("Game", foreign_keys="Game.away_team_id", back_populates="away_team")
 
-class Player(Base):
-    __tablename__ = "players"
+def serialize_value(value: Any) -> Any:
+    """Serialize any value, handling datetime objects specially."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return serialize_datetime(value)
+    if isinstance(value, dict):
+        return {k: serialize_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [serialize_value(item) for item in value]
+    return value
 
-    player_id = Column(Integer, primary_key=True)
-    full_name = Column(String, nullable=False)
-    first_name = Column(String)
-    last_name = Column(String)
-    current_team_id = Column(Integer, ForeignKey("teams.team_id"))
-    previous_team_id = Column(Integer, ForeignKey("teams.team_id"))
-    traded_date = Column(DateTime)
-    position = Column(String)
-    jersey_number = Column(String)
-    is_active = Column(Boolean, default=True)
-    headshot_url = Column(String)
-    last_updated = Column(DateTime, default=datetime.utcnow)
 
-    # Relationships - specify foreign keys and overlaps explicitly
-    team = relationship("Team", back_populates="players", foreign_keys=[current_team_id])
-    previous_team = relationship("Team", foreign_keys=[previous_team_id], overlaps="previous_players")
-    game_stats = relationship("PlayerGameStats", back_populates="player")
+def normalize_components(
+    components: Union[Dict[str, Any], None],
+) -> Dict[str, Dict[str, Any]]:
+    """Ensure component dictionary has consistent structure and all values are properly serialized"""
+    if not isinstance(components, dict):
+        components = {}
 
-class Game(Base):
-    __tablename__ = "games"
+    for component in ["teams", "players", "games"]:
+        if component not in components:
+            components[component] = {}
 
-    game_id = Column(String, primary_key=True)  # Changed from Integer to String
-    game_date_utc = Column(DateTime, nullable=False)
-    home_team_id = Column(Integer, ForeignKey("teams.team_id"), nullable=False)
-    away_team_id = Column(Integer, ForeignKey("teams.team_id"), nullable=False)
-    home_score = Column(Integer)
-    away_score = Column(Integer)
-    status = Column(String, nullable=False)  # 'Upcoming', 'Live', 'Completed'
-    season_year = Column(String, nullable=False)
-    playoff_round = Column(String)  # Added field for playoff rounds
-    last_updated = Column(DateTime, default=datetime.utcnow)
+        current = components[component]
+        if not isinstance(current, dict):
+            current = {}
 
-    # Relationships
-    home_team = relationship("Team", foreign_keys=[home_team_id], back_populates="home_games")
-    away_team = relationship("Team", foreign_keys=[away_team_id], back_populates="away_games")
-    player_stats = relationship("PlayerGameStats", back_populates="game")
+        # Ensure required fields exist
+        defaults = {
+            "updated": False,
+            "percent_complete": 0,
+            "last_update": None,
+            "last_error": None,
+        }
 
-    # Add unique constraints
-    __table_args__ = (
-        UniqueConstraint('home_team_id', 'away_team_id', 'game_date_utc', 'season_year', name='unique_game_matchup'),
-    )
+        # Create normalized component dict with defaults and serialized values
+        normalized = {}
+        for key, default in defaults.items():
+            value = current.get(key, default)
+            normalized[key] = serialize_value(value)
 
-class PlayerGameStats(Base):
-    __tablename__ = "player_game_stats"
+        components[component] = normalized
 
-    stat_id = Column(Integer, primary_key=True, autoincrement=True)
-    player_id = Column(Integer, ForeignKey("players.player_id"))
-    game_id = Column(String, ForeignKey("games.game_id"))  # Changed from Integer to String
-    team_id = Column(Integer, ForeignKey("teams.team_id"))
-    
-    minutes = Column(String)
-    points = Column(Integer)
-    rebounds = Column(Integer)
-    assists = Column(Integer)
-    steals = Column(Integer)
-    blocks = Column(Integer)
-    fgm = Column(Integer)
-    fga = Column(Integer)
-    fg_pct = Column(Float)
-    tpm = Column(Integer)
-    tpa = Column(Integer)
-    tp_pct = Column(Float)
-    ftm = Column(Integer)
-    fta = Column(Integer)
-    ft_pct = Column(Float)
-    turnovers = Column(Integer)
-    fouls = Column(Integer)
-    plus_minus = Column(Integer)
-    last_updated = Column(DateTime, default=datetime.utcnow)
+    return components
 
-    # Add unique constraint for composite key
-    __table_args__ = (
-        UniqueConstraint('player_id', 'game_id', 'team_id', name='unique_player_game_stats'),
-    )
 
-    # Relationships
-    player = relationship("Player", back_populates="game_stats")
-    game = relationship("Game", back_populates="player_stats")
-    team = relationship("Team")
+class ComponentStatus(TypedDict, total=False):
+    updated: bool
+    percent_complete: int
+    last_error: Optional[str]
+    last_update: Optional[datetime]
+
+
+class Components(TypedDict, total=False):
+    players: ComponentStatus
+    teams: ComponentStatus
+    games: ComponentStatus
+
 
 class DataUpdateStatus(Base):
     __tablename__ = "data_update_status"
 
-    id = Column(Integer, primary_key=True)  # Remove default=1 to let SQLAlchemy handle it
-    last_successful_update = Column(DateTime)
-    next_scheduled_update = Column(DateTime)
-    is_updating = Column(Boolean, default=False)
-    teams_updated = Column(Boolean, default=False)
-    players_updated = Column(Boolean, default=False)
-    games_updated = Column(Boolean, default=False)
-    current_phase = Column(String)  # 'teams', 'players', or 'games'
-    last_error = Column(String)
-    last_error_time = Column(DateTime)
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=False
+    )  # Ensure id=1 is explicitly managed
+    last_successful_update: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    next_scheduled_update: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    is_updating: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    cancellation_requested: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
+    # Store component details in a JSON column
+    components: Mapped[Dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+
+    # Overall status for each component
+    teams_updated: Mapped[bool] = mapped_column(Boolean, default=False)
+    players_updated: Mapped[bool] = mapped_column(Boolean, default=False)
+    games_updated: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Progress tracking for each component
+    teams_percent_complete: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    players_percent_complete: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    games_percent_complete: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+
+    # Last update time for each component
+    teams_last_update: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    players_last_update: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    games_last_update: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+
+    # Current phase and error info
+    current_phase: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    current_detail: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_error_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    def __init__(self, **kwargs):
+        # Ensure 'id' is explicitly set, defaulting to 1 if not provided.
+        # This is crucial for the singleton nature of this table.
+        if "id" not in kwargs:
+            kwargs["id"] = 1
+
+        if "components" not in kwargs:
+            kwargs["components"] = {}
+        else:
+            if isinstance(kwargs["components"], dict):
+                # Normalize and serialize the components
+                kwargs["components"] = normalize_components(kwargs["components"])
+        super().__init__(**kwargs)
+
+    def __setattr__(self, key, value):
+        if key == "components" and isinstance(value, dict):
+            # Normalize and serialize any datetime values in components when set
+            value = normalize_components(value)
+        super().__setattr__(key, value)
+
+
+class Team(Base):
+    __tablename__ = "teams"
+
+    team_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    abbreviation: Mapped[str] = mapped_column(String, nullable=False)
+    conference: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    division: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    wins: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)
+    losses: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)
+    logo_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    roster_loaded: Mapped[bool] = mapped_column(Boolean, default=False)
+    loading_progress: Mapped[int] = mapped_column(Integer, default=0)
+    games_loaded: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_updated: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    players: Mapped[List["Player"]] = relationship(
+        "Player", back_populates="team", foreign_keys="[Player.current_team_id]"
+    )
+    home_games: Mapped[List["Game"]] = relationship(
+        "Game", foreign_keys="[Game.home_team_id]", backref="home_team"
+    )
+    away_games: Mapped[List["Game"]] = relationship(
+        "Game", foreign_keys="[Game.away_team_id]", backref="away_team"
+    )
+
+
+class Player(Base):
+    __tablename__ = "players"
+
+    player_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    position: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    jersey_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    current_team_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("teams.team_id"), nullable=True
+    )
+    previous_team_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("teams.team_id"), nullable=True
+    )
+    traded_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    headshot_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_loaded: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_updated: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    team: Mapped[Optional["Team"]] = relationship(
+        "Team", back_populates="players", foreign_keys=[current_team_id]
+    )
+    game_stats: Mapped[List["PlayerGameStats"]] = relationship(
+        "PlayerGameStats", back_populates="player"
+    )
+
+
+class Game(Base):
+    __tablename__ = "games"
+
+    game_id: Mapped[str] = mapped_column(String, primary_key=True)
+    home_team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.team_id"), nullable=False
+    )
+    away_team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.team_id"), nullable=False
+    )
+    game_date_utc: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    home_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    away_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    season_year: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    playoff_round: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    is_loaded: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_updated: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    player_stats: Mapped[List["PlayerGameStats"]] = relationship(
+        "PlayerGameStats", back_populates="game"
+    )
+
+
+class PlayerGameStats(Base):
+    __tablename__ = "player_game_stats"
+
+    stat_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.player_id"), nullable=False
+    )
+    game_id: Mapped[str] = mapped_column(ForeignKey("games.game_id"), nullable=False)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.team_id"), nullable=False)
+    minutes: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    points: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    rebounds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    assists: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    steals: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    blocks: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fgm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fga: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fg_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    tpm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tpa: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tp_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ftm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fta: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ft_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    turnovers: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fouls: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    plus_minus: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    last_updated: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id", "game_id", "team_id", name="unique_player_game_stats"
+        ),
+    )
+
+    # Relationships
+    player: Mapped["Player"] = relationship("Player", back_populates="game_stats")
+    game: Mapped["Game"] = relationship("Game", back_populates="player_stats")
+    team: Mapped["Team"] = relationship("Team")

@@ -1,964 +1,754 @@
-import aiohttp
 import asyncio
-from datetime import datetime, timedelta
-import time
+import functools
 import logging
-import random
 import os
-from sqlalchemy.orm import Session
-from nba_api.stats.endpoints import scoreboardv2, commonteamroster, teaminfocommon, boxscoretraditionalv2, leaguestandingsv3, teamgamelog
-from nba_api.stats.static import teams
-from nba_api.stats.library import http
-from app.models.models import Team, Player, Game, PlayerGameStats, DataUpdateStatus
-from requests.exceptions import Timeout, RequestException
-import requests
+import random
 import sys
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, TypedDict, Union, cast
+
+import aiohttp
+import requests
+import urllib3
+from nba_api.stats.endpoints import (
+    boxscoretraditionalv2,
+    commonallplayers,
+    commonteamroster,
+    leaguestandingsv3,
+    scoreboardv2,
+    teamgamelog,
+    teaminfocommon,
+)
+from nba_api.stats.library import http
+from nba_api.stats.static import teams
+from requests.exceptions import RequestException, Timeout
+from sqlalchemy import func as sa_func
+from sqlalchemy import select
+from sqlalchemy import select as sa_select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+
+from app.core.settings import settings
+from app.exceptions import TaskCancelledError
+from app.models.models import (
+    Components,
+    ComponentStatus,
+    DataUpdateStatus,
+    Game,
+    Player,
+    PlayerGameStats,
+    Team,
+)
+from app.utils.date_utils import parse_nba_date
+from app.utils.status_utils import (
+    finalize_component,
+    handle_component_error,
+    initialize_status,
+    update_progress,
+)
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stdout
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
 )
 logger = logging.getLogger(__name__)
 
 # Configure NBA API
-http.STATS_HEADERS['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-http.TIMEOUT = 60
-requests.packages.urllib3.disable_warnings()
-http.VERIFY = False
+http.STATS_HEADERS["User-Agent"] = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+)
 
-# If running in a container, set SSL verification to False
-os.environ['PYTHONHTTPSVERIFY'] = '0'
+# Turn off SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def parse_nba_date(date_str: str) -> datetime:
-    """Parse date string from NBA API in various formats"""
-    formats = [
-        '%Y-%m-%d',  # Standard format
-        '%b %d, %Y',  # Format like 'Feb 10, 2025'
-        '%B %d, %Y',  # Format like 'February 10, 2025'
-        '%Y-%m-%dT%H:%M:%S'  # ISO format
-    ]
-    
-    # Convert month name to title case for consistent parsing
-    if isinstance(date_str, str):
-        for month in ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']:
-            date_str = date_str.replace(month, month.title())
-    
-    for fmt in formats:
-        try:
-            return datetime.strptime(date_str, fmt)
-        except ValueError:
-            continue
-            
-    raise ValueError(f"Could not parse date string: {date_str}")
+# Constants for API headers
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 
 class NBADataService:
-    def __init__(self, db: Session):
+    """Service for handling NBA data updates"""
+
+    def __init__(self, db: AsyncSession):
         self.db = db
-        self._request_timeout = 180  # 3 minutes
-        self._read_timeout = 120    # 2 minutes
-        self._connect_timeout = 60  # 1 minute
-        self._last_request_time = 0
-        self._base_delay = 2.0
-        self._max_retries = 5
-        self._max_backoff = 30
-        
-        # Configure proxy settings (use system proxy if available)
-        self._proxies = {
-            'http': os.environ.get('HTTP_PROXY'),
-            'https': os.environ.get('HTTPS_PROXY')
-        }
-        
-        # Define standard headers with varied User-Agents
-        self._user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0'
-        ]
-        
-        self.headers = {
-            'Host': 'stats.nba.com',
-            'User-Agent': random.choice(self._user_agents),
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'x-nba-stats-origin': 'stats',
-            'x-nba-stats-token': 'true',
-            'Connection': 'keep-alive',
-            'Referer': 'https://www.nba.com/',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-        }
+        self.headers = DEFAULT_HEADERS.copy()
+        self.verify_ssl = not os.environ.get("RUNNING_IN_CONTAINER", False)
+        self._status: Optional[DataUpdateStatus] = None
+        self._status_lock = asyncio.Lock()
 
-    async def _enforce_rate_limit(self):
-        """Enforce rate limiting between API requests"""
-        current_time = time.time()
-        time_since_last = current_time - self._last_request_time
-        
-        if time_since_last < self._base_delay:
-            delay = self._base_delay - time_since_last + random.uniform(0.1, 0.5)  # Add jitter
-            logger.info(f"Rate limiting: waiting {delay:.2f} seconds")
-            await asyncio.sleep(delay)
-            
-        self._last_request_time = time.time()
-
-    async def _make_nba_request(self, endpoint_class, **params):
-        """Make request using nba_api endpoints with proper error handling and rate limiting"""
-        retry_count = 0
-        current_delay = self._base_delay
-        last_error = None
-
-        while retry_count <= self._max_retries:
-            try:
-                # Enforce rate limiting before making request
-                await self._enforce_rate_limit()
-                
-                # Rotate User-Agent on each retry
-                self.headers['User-Agent'] = random.choice(self._user_agents)
-                
-                # Configure endpoint with timeouts and proxy
-                endpoint = endpoint_class(
-                    timeout=(self._connect_timeout, self._read_timeout),
-                    headers=self.headers,
-                    proxy=self._proxies.get('https'),
-                    **params
-                )
-                
-                try:
-                    # Get JSON string and parse it
-                    json_str = endpoint.get_json()
-                    if isinstance(json_str, str):
-                        import json
-                        data = json.loads(json_str)
-                    else:
-                        data = json_str
-                    
-                    # Reset delay on successful request
-                    current_delay = self._base_delay
-                    return data
-                    
-                except requests.exceptions.HTTPError as he:
-                    last_error = he
-                    if he.response.status_code == 429:  # Too Many Requests
-                        retry_after = int(he.response.headers.get('Retry-After', current_delay))
-                        logger.warning(f"Rate limit exceeded. Waiting {retry_after} seconds")
-                        await asyncio.sleep(retry_after)
-                    else:
-                        logger.warning(f"HTTP error (attempt {retry_count + 1}/{self._max_retries}): {str(he)}")
-                        await asyncio.sleep(current_delay)
-                    current_delay = min(current_delay * 2, self._max_backoff)
-                    retry_count += 1
-                    continue
-                    
-                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-                    last_error = e
-                    logger.warning(f"Request failed (attempt {retry_count + 1}/{self._max_retries}): {str(e)}")
-                    await asyncio.sleep(current_delay)
-                    current_delay = min(current_delay * 2, self._max_backoff)
-                    retry_count += 1
-                    continue
-                
-            except Exception as e:
-                last_error = e
-                logger.warning(f"Request failed (attempt {retry_count + 1}/{self._max_retries}): {str(e)}")
-                await asyncio.sleep(current_delay)
-                current_delay = min(current_delay * 2, self._max_backoff)
-                retry_count += 1
-                continue
-
-        logger.error(f"Max retries exceeded. Last error: {str(last_error)}")
-        raise last_error
-
-    def _parse_int(self, value, default=0):
-        """Safely parse an integer value"""
-        try:
-            if isinstance(value, str):
-                # Remove any non-digit characters and convert
-                clean_value = ''.join(filter(str.isdigit, value))
-                return int(clean_value) if clean_value else default
-            elif isinstance(value, (int, float)):
-                return int(value)
-            return default
-        except (ValueError, TypeError):
-            return default
-
-    def _get_current_season(self):
-        """Get the current NBA season string based on date"""
+    def _get_current_season(self) -> str:
+        """Get the current NBA season string"""
         today = datetime.now()
-        # NBA regular season typically ends in April
-        # Use previous season until the new season starts (typically October)
-        if today.month >= 10:  # New season starts in October
-            return f"{today.year}-{str(today.year+1)[2:]}"
-        elif today.month < 10:  # Use previous season until new season starts
-            return f"{today.year-1}-{str(today.year)[2:]}"
+        if today.month >= 10:  # NBA season starts in October
+            return f"{today.year}-{str(today.year + 1)[-2:]}"
+        return f"{today.year - 1}-{str(today.year)[-2:]}"
 
-    async def _make_api_request(self, endpoint, params=None):
-        """Legacy method replaced by _make_nba_request"""
+    async def _safe_commit(self) -> None:
+        """Safely commit database changes"""
         try:
-            # Map string endpoints to NBA API endpoint classes
-            endpoint_mapping = {
-                'leaguestandingsv3': leaguestandingsv3.LeagueStandingsV3,
-                'boxscoretraditionalv2': boxscoretraditionalv2.BoxScoreTraditionalV2,
-                'teamgamelog': teamgamelog.TeamGameLog,  # Fix incorrect mapping
-                'commonteamroster': commonteamroster.CommonTeamRoster  # Add missing endpoint
-            }
-            
-            endpoint_class = endpoint_mapping.get(endpoint)
-            if endpoint_class:
-                return await self._make_nba_request(endpoint_class, **params)
-            else:
-                raise ValueError(f"Unknown endpoint: {endpoint}")
-                
+            await self.db.commit()
         except Exception as e:
-            logger.error(f"Error in legacy _make_api_request: {str(e)}")
+            logger.error(f"Error committing changes: {e}")
+            await self._safe_rollback()
             raise
 
-    async def update_games(self):
-        """Update games and player statistics"""
+    async def _safe_rollback(self) -> None:
+        """Safely rollback database changes"""
         try:
-            current_season = self._get_current_season()
-            logger.info(f"Updating games for season: {current_season}")
-            
-            # First update existing games in the database that need stats
-            games_needing_stats = self.db.query(Game).filter(
-                Game.status == 'Completed',
-                ~Game.game_id.in_(
-                    self.db.query(PlayerGameStats.game_id).distinct()
-                )
-            ).all()
-            
-            logger.info(f"Found {len(games_needing_stats)} completed games that need stats")
-            
-            for game in games_needing_stats:
+            await self.db.rollback()
+        except Exception as e:
+            logger.error(f"Error rolling back changes: {e}")
+
+    def _parse_int(self, value: Any) -> Optional[int]:
+        """Safely parse an integer value with improved validation"""
+        if value is None or value == "":
+            return None
+
+        try:
+            # Handle bool explicitly since it's a subclass of int
+            if isinstance(value, bool):
+                return 1 if value else 0
+
+            # Handle numeric types
+            if isinstance(value, (int, float)):
+                # Validate range and convert NaN/Inf
+                if not (float("-inf") < float(value) < float("inf")):
+                    return None
+                return int(value)
+
+            if isinstance(value, str):
+                # Remove whitespace and validate
+                cleaned = value.strip()
+                if not cleaned or cleaned.lower() in ("na", "n/a", "null", "none"):
+                    return None
+
+                # Try integer first
                 try:
-                    logger.info(f"Processing historical game {game.game_id}")
-                    await self._process_game(game.game_id, {
-                        'GAME_ID': game.game_id,
-                        'GAME_DATE': game.game_date_utc.strftime("%Y-%m-%d"),
-                        'HOME_TEAM_ID': game.home_team_id,
-                        'AWAY_TEAM_ID': game.away_team_id
-                    }, current_season)
-                except Exception as e:
-                    logger.error(f"Error processing historical game {game.game_id}: {str(e)}")
-                    continue
-            
-            # Then process today's games
-            try:
-                today = datetime.now() - timedelta(hours=4)
-                date_str = today.strftime('%m/%d/%Y')
-                logger.info(f"Fetching today's games for date: {date_str}")
-                
-                # Use NBA API's scoreboardv2 endpoint
-                scoreboard = scoreboardv2.ScoreboardV2(
-                    game_date=date_str,
-                    league_id='00',
-                    day_offset=0
-                )
-                
-                games_dict = scoreboard.get_dict()
-                
-                if games_dict and 'resultSets' in games_dict:
-                    game_header = next((rs for rs in games_dict['resultSets'] if rs['name'] == 'GameHeader'), None)
-                    if game_header and game_header.get('rowSet'):
-                        headers = {h: i for i, h in enumerate(game_header['headers'])}
-                        
-                        for game_row in game_header['rowSet']:
-                            try:
-                                game_id = str(game_row[headers['GAME_ID']])
-                                # Parse the game date in EST
-                                game_date_est = datetime.strptime(game_row[headers['GAME_DATE_EST']], '%Y-%m-%dT%H:%M:%S')
-                                # Convert EST to UTC by adding 4 hours (EST is UTC-4)
-                                game_date_utc = game_date_est + timedelta(hours=4)
-                                
-                                home_team_id = int(game_row[headers['HOME_TEAM_ID']])
-                                away_team_id = int(game_row[headers['VISITOR_TEAM_ID']])
-                                game_status_text = str(game_row[headers['GAME_STATUS_TEXT']])
-                                
-                                # Determine game status based on GAME_STATUS_TEXT
-                                if game_status_text in ['Final', 'F/OT']:
-                                    status = 'Completed'
-                                elif game_status_text.endswith(' ET'):  # Time format like "8:30 pm ET"
-                                    status = 'Upcoming'
-                                else:
-                                    status = 'Live'  # Game is in progress
-                                
-                                logger.info(f"Processing game {game_id} with status: {status}")
-                                
-                                # For upcoming games, scores will be None
-                                # For completed or live games, we'll get scores from box score
-                                home_score = None
-                                away_score = None
-                                
-                                # Create or update game record
-                                game = self.db.merge(Game(
-                                    game_id=game_id,
-                                    game_date_utc=game_date_utc,  # Now using properly converted UTC time
-                                    home_team_id=home_team_id,
-                                    away_team_id=away_team_id,
-                                    home_score=home_score,
-                                    away_score=away_score,
-                                    status=status,
-                                    season_year=current_season,
-                                    last_updated=datetime.utcnow()
-                                ))
-                                self.db.commit()
-                                
-                                # For completed or live games, get scores from box score
-                                if status in ['Completed', 'Live']:
-                                    await self._process_game(game_id, {
-                                        'GAME_ID': game_id,
-                                        'GAME_DATE': game_date_utc.strftime("%Y-%m-%d"),
-                                        'HOME_TEAM_ID': home_team_id,
-                                        'AWAY_TEAM_ID': away_team_id
-                                    }, current_season)
-                                    
-                            except Exception as e:
-                                logger.error(f"Error processing game {game_id if 'game_id' in locals() else 'unknown'}: {str(e)}")
-                                continue
-                                
-            except Exception as e:
-                logger.error(f"Error fetching game schedule: {str(e)}")
-                raise
-                
-        except Exception as e:
-            logger.error(f"Error in update_games: {str(e)}")
-            raise
-
-    async def update_teams(self):
-        """Update team information in the database"""
-        try:
-            # First reset all teams' loading flags
-            self.db.query(Team).update({
-                "roster_loaded": False,
-                "games_loaded": False,
-                "loading_progress": 0
-            })
-            self.db.commit()
-
-            nba_teams = teams.get_teams()
-            logger.info(f"Found {len(nba_teams)} teams to update")
-            
-            try:
-                current_season = self._get_current_season()
-                logger.info(f"Fetching standings for season: {current_season}")
-                
-                # Get team standings using leaguestandingsv3 endpoint
-                standings = await self._make_nba_request(
-                    leaguestandingsv3.LeagueStandingsV3,
-                    season=current_season.split('-')[0]  # Use first year of season
-                )
-                
-                if not standings or 'resultSets' not in standings:
-                    logger.error("Invalid standings data format")
-                    raise Exception("Invalid standings data format")
-
-                standings_data = standings['resultSets'][0]
-                headers = {h.lower(): i for i, h in enumerate(standings_data['headers'])}
-                
-                rows = standings_data['rowSet']
-                if not rows:
-                    logger.warning("No standings data found")
-                    return
-                    
-                # Create a lookup table for team IDs to standings
-                standings_lookup = {}
-                
-                for row in rows:
+                    return int(cleaned)
+                except ValueError:
+                    # Try float then convert to int, but validate first
                     try:
-                        team_id = str(row[headers['teamid']])
-                        wins = self._parse_int(row[headers['wins']])
-                        losses = self._parse_int(row[headers['losses']])
-                        
-                        standings_lookup[team_id] = {
-                            'wins': wins,
-                            'losses': losses,
-                            'season': current_season
-                        }
-                        logger.info(f"Found standings for team {team_id}: {wins}W-{losses}L (Season: {current_season})")
-                    except Exception as e:
-                        logger.error(f"Error parsing standings row: {str(e)}. Row data: {row}")
-                        continue
+                        float_val = float(cleaned)
+                        if not (float("-inf") < float_val < float("inf")):
+                            return None
+                        return int(float_val)
+                    except ValueError:
+                        return None
 
-                # Update teams with standings data
-                for team_info in nba_teams:
-                    try:
-                        team_id = str(team_info['id'])
-                        team_standings = standings_lookup.get(team_id)
-                        
-                        if team_standings is None:
-                            logger.warning(f"No standings found for team {team_info['full_name']} (ID: {team_id})")
-                            continue
-
-                        team = self.db.merge(Team(
-                            team_id=team_info['id'],
-                            name=team_info['full_name'],
-                            abbreviation=team_info['abbreviation'],
-                            conference=team_info.get('conference', ''),
-                            division=team_info.get('division', ''),
-                            wins=team_standings['wins'],
-                            losses=team_standings['losses'],
-                            logo_url=f"https://cdn.nba.com/logos/nba/{team_info['id']}/global/L/logo.svg",
-                            last_updated=datetime.utcnow()
-                        ))
-                        
-                        self.db.commit()
-                        logger.info(f"Updated team: {team_info['full_name']} ({team_standings['wins']}W-{team_standings['losses']}L)")
-                        
-                        await asyncio.sleep(1)
-                        
-                    except Exception as e:
-                        self.db.rollback()
-                        logger.error(f"Error updating team {team_info['full_name']}: {str(e)}")
-                        continue
-                
-            except Exception as e:
-                logger.error(f"Error getting standings data: {str(e)}")
-                raise
-                    
-        except Exception as e:
-            self.db.rollback()
-            logger.error(f"Error in update_teams: {str(e)}")
-            raise
-
-    async def update_team_players(self, team_id: int):
-        """Update players for a specific team"""
-        try:
-            # Reset team's loading status
-            team = self.db.query(Team).filter_by(team_id=team_id).first()
-            if team:
-                team.loading_progress = 0
-                team.roster_loaded = False
-                team.games_loaded = False  # Reset games loaded status
-                self.db.commit()
-
-            # Use commonteamroster endpoint with proper NBA API class
-            roster_data = await self._make_nba_request(
-                commonteamroster.CommonTeamRoster,
-                team_id=team_id,
-                season=self._get_current_season()
+        except (ValueError, TypeError, OverflowError) as e:
+            logger.warning(
+                f"Failed to parse integer from value: {repr(value)}, error: {str(e)}"
             )
-            
-            if not roster_data or 'resultSets' not in roster_data or not roster_data['resultSets']:
-                logger.error(f"Invalid roster data format for team {team_id}")
-                return
+            return None
 
-            # Rest of the existing function...
-            roster = roster_data['resultSets'][0]
-            rows = roster.get('rowSet', [])
-            if not rows:
-                logger.warning(f"No roster data found for team {team_id}")
-                return
-            
-            total_players = len(rows)
-            processed_players = 0
-            
-            # Create header mapping and validate
-            headers = {h.upper(): i for i, h in enumerate(roster.get('headers', []))}
-            required_columns = {'PLAYER', 'NUM', 'POSITION', 'PLAYER_ID'}
-            if not all(col in headers for col in required_columns):
-                logger.error(f"Missing required columns in roster data for team {team_id}")
-                return
-                
-            for player_data in rows:
-                try:
-                    if len(player_data) <= max(headers.values()):
-                        logger.warning(f"Insufficient player data for team {team_id}: {player_data}")
-                        continue
+    async def _check_cancellation(self) -> None:
+        """Check if the current operation should be cancelled by querying the flag directly"""
+        from sqlalchemy import select
 
-                    # Extract and validate player info
-                    raw_player_id = player_data[headers['PLAYER_ID']]
-                    if not raw_player_id:
-                        logger.warning(f"Missing player ID in data: {player_data}")
-                        continue
-                        
-                    player_id = self._parse_int(raw_player_id)
-                    if not player_id:
-                        logger.warning(f"Invalid player ID format: {raw_player_id}")
-                        continue
+        from app.models.models import DataUpdateStatus
 
-                    # Process player data
-                    player_name = str(player_data[headers['PLAYER']]).strip()
-                    name_parts = player_name.split(maxsplit=1)
-                    first_name = name_parts[0]
-                    last_name = name_parts[1] if len(name_parts) > 1 else ""
+        # Query only the cancellation flag to avoid lazy-loading
+        stmt = select(DataUpdateStatus.cancellation_requested).filter_by(id=1)
+        result = await self.db.execute(stmt)
+        cancelled = result.scalar_one_or_none()
+        if cancelled:
+            logger.info("Operation cancelled by user request")
+            raise TaskCancelledError("Operation cancelled by user request")
 
-                    raw_jersey = str(player_data[headers['NUM']]).strip() if player_data[headers['NUM']] else None
-                    jersey = ''.join(filter(str.isdigit, raw_jersey)) if raw_jersey else None
+    async def _make_nba_request(self, endpoint_class: Any, **kwargs) -> Dict:
+        """Make a request to the NBA API with proper error handling"""
+        max_retries = 3
+        base_delay = 2.0  # Increased from 1.0 to reduce rate limiting
 
-                    raw_position = str(player_data[headers['POSITION']]).strip() if player_data[headers['POSITION']] else None
-                    valid_positions = {'G', 'F', 'C', 'G-F', 'F-G', 'F-C', 'C-F'}
-                    position = raw_position if raw_position in valid_positions else None
-
-                    # Update or create player
-                    existing_player = self.db.query(Player).filter_by(player_id=player_id).first()
-                    if existing_player and existing_player.current_team_id != team_id and existing_player.current_team_id is not None:
-                        player = self.db.merge(Player(
-                            player_id=player_id,
-                            full_name=player_name,
-                            first_name=first_name,
-                            last_name=last_name,
-                            current_team_id=team_id,
-                            previous_team_id=existing_player.current_team_id,
-                            traded_date=datetime.utcnow(),
-                            jersey_number=jersey,
-                            position=position,
-                            is_active=True,
-                            headshot_url=f"https://cdn.nba.com/headshots/nba/latest/1040x760/{player_id}.png",
-                            last_updated=datetime.utcnow()
-                        ))
-                    else:
-                        player = self.db.merge(Player(
-                            player_id=player_id,
-                            full_name=player_name,
-                            first_name=first_name,
-                            last_name=last_name,
-                            current_team_id=team_id,
-                            jersey_number=jersey,
-                            position=position,
-                            is_active=True,
-                            headshot_url=f"https://cdn.nba.com/headshots/nba/latest/1040x760/{player_id}.png",
-                            last_updated=datetime.utcnow()
-                        ))
-                    
-                    self.db.commit()
-                    
-                    # Update progress
-                    processed_players += 1
-                    if team:
-                        team.loading_progress = int((processed_players / total_players) * 100)
-                        self.db.commit()
-                    
-                    await asyncio.sleep(1)
-                    
-                except Exception as e:
-                    self.db.rollback()
-                    logger.error(f"Error updating player data: {str(e)}")
-                    continue
-            
-            # Mark team roster as loaded and update progress
-            if team:
-                team.roster_loaded = True
-                team.loading_progress = 50  # Set to 50% when roster is loaded
-                self.db.commit()
-
-            # Update games for this team
-            await self.update_team_games(team_id)
-                    
-        except Exception as e:
-            self.db.rollback()
-            logger.error(f"Error updating players for team {team_id}: {str(e)}")
-            raise
-
-    async def update_team_games(self, team_id: int):
-        """Update games for a specific team"""
-        try:
-            team = self.db.query(Team).filter_by(team_id=team_id).first()
-            if not team:
-                return
-
-            # Get today's date in EST (NBA's timezone)
-            today = datetime.now() - timedelta(hours=4)
-            season = self._get_current_season()
-            
+        for attempt in range(max_retries):
             try:
-                # Use the proper TeamGameLog endpoint
-                schedule_data = await self._make_nba_request(
-                    teamgamelog.TeamGameLog,
-                    team_id=team_id,
-                    season=season,
-                    season_type_all_star="Regular Season"
-                )
-
-                if not schedule_data or 'resultSets' not in schedule_data:
-                    logger.warning(f"No schedule data found for team {team_id}")
-                    return
-
-                games_set = schedule_data['resultSets'][0]
-                total_games = len(games_set.get('rowSet', []))
-                processed_games = 0
-
-                for game_row in games_set.get('rowSet', []):
-                    try:
-                        game_id = str(game_row[games_set['headers'].index('Game_ID')])
-                        game_date = game_row[games_set['headers'].index('GAME_DATE')]
-                        
-                        # Process game
-                        await self._process_game(game_id, {
-                            'GAME_ID': game_id,
-                            'GAME_DATE': game_date,
-                            'TEAM_ID': team_id
-                        }, season)
-
-                        # Update progress
-                        processed_games += 1
-                        if team:
-                            # Calculate progress (50-100% range for games)
-                            games_progress = int((processed_games / total_games) * 50)
-                            team.loading_progress = 50 + games_progress  # Add to base 50% from roster loading
-                            self.db.commit()
-
-                        await asyncio.sleep(1)
-
-                    except Exception as e:
-                        logger.error(f"Error processing game {game_id if 'game_id' in locals() else 'unknown'}: {str(e)}")
-                        continue
-
-                # Mark games as loaded
-                if team:
-                    team.games_loaded = True
-                    team.loading_progress = 100
-                    self.db.commit()
-
-            except Exception as e:
-                logger.error(f"Error fetching games for team {team_id}: {str(e)}")
-                raise
-
-        except Exception as e:
-            self.db.rollback()
-            logger.error(f"Error updating games for team {team_id}: {str(e)}")
-            raise
-
-    async def update_all_data(self):
-        """Update all NBA data in the database"""
-        try:
-            # Get existing status record or create new one
-            status = self.db.query(DataUpdateStatus).first()
-            if not status:
-                status = DataUpdateStatus()
-                self.db.add(status)
-            
-            # Prevent updates if initial load is in progress
-            if status.is_updating and status.current_phase in ['teams', 'players', 'games']:
-                logger.info("Initial data load in progress, skipping regular update")
-                return False
-
-            # Check if this is initial data load
-            team_count = self.db.query(Team).count()
-            is_initial_load = team_count == 0
-
-            if status.is_updating and not is_initial_load:
-                logger.warning("Update already in progress")
-                return False
-
-            # Reset status flags
-            status.is_updating = True
-            status.current_phase = 'cleanup'
-            status.last_error = None
-            status.last_error_time = None
-            status.teams_updated = False
-            status.players_updated = False
-            status.games_updated = False
-            self.db.commit()
-            
-            try:
-                # First clean up old season data
-                if not is_initial_load:
-                    await self.cleanup_old_seasons()
-                
-                # Update teams
-                status.current_phase = 'teams'
-                self.db.commit()
-                await self.update_teams()
-                status.teams_updated = True
-                self.db.commit()
-
-                # Update players for each team
-                status.current_phase = 'players'
-                self.db.commit()
-                
-                teams = self.db.query(Team).all()
-                for team in teams:
-                    await self.update_team_players(team.team_id)
-                
-                status.players_updated = True
-                
-                # Update games and stats
-                status.current_phase = 'games'
-                self.db.commit()
-                await self.update_games()
-                status.games_updated = True
-                
-                # Update the final status
-                status.current_phase = None
-                status.last_successful_update = datetime.utcnow()
-                status.next_scheduled_update = datetime.utcnow() + timedelta(hours=6)
-                status.is_updating = False
-                self.db.commit()
-                return True
-                
-            except Exception as e:
-                self.db.rollback()
-                status = self.db.query(DataUpdateStatus).first()
-                if status:
-                    status.last_error = str(e)
-                    status.last_error_time = datetime.utcnow()
-                    status.is_updating = False
-                    self.db.commit()
-                raise e
-                
-        except Exception as e:
-            try:
-                status = self.db.query(DataUpdateStatus).first()
-                if status:
-                    status.is_updating = False
-                    self.db.commit()
-            except:
-                pass
-            raise e
-
-    async def _process_game(self, game_id: str, game_data: dict, season: str):
-        """Process a single game and its player statistics"""
-        try:
-            # NBA API expects 10-digit game IDs, pad with zeros if needed
-            padded_game_id = game_id.zfill(10)
-            logger.info(f"Processing game {game_id} (padded: {padded_game_id})")
-            
-            # First check if the game exists and if it needs updating
-            existing_game = self.db.query(Game).filter_by(game_id=game_id).first()
-            if existing_game and existing_game.status == 'Completed':
-                # Skip if game is already completed and has stats
-                if self.db.query(PlayerGameStats).filter_by(game_id=game_id).count() > 0:
-                    logger.info(f"Skipping game {game_id} - already completed with stats")
-                    return
-            
-            # Parse the game date using our flexible parser
-            try:
-                game_date_utc = parse_nba_date(game_data['GAME_DATE'])
-            except ValueError as e:
-                logger.error(f"Could not parse game date '{game_data['GAME_DATE']}' for game {game_id}: {str(e)}")
-                return
-            
-            # Get box score data
-            try:
-                box_score = await self._make_nba_request(
-                    boxscoretraditionalv2.BoxScoreTraditionalV2,
-                    game_id=padded_game_id
-                )
-            except Exception as e:
-                logger.error(f"Error fetching box score for game {game_id}: {str(e)}")
-                return
-                
-            if not box_score:
-                logger.warning(f"No box score data found for game {game_id}")
-                return
-                
-            # Handle both resultSet and resultSets formats
-            result_sets = box_score.get('resultSets', box_score.get('resultSet', []))
-            if not result_sets:
-                logger.warning(f"No result sets found in box score for game {game_id}")
-                return
-
-            # Find team stats first
-            team_stats_set = next((rs for rs in result_sets if rs['name'] == 'TeamStats'), None)
-            player_stats_set = next((rs for rs in result_sets if rs['name'] == 'PlayerStats'), None)
-            
-            # Create or update game record with available data
-            home_team_id = game_data.get('HOME_TEAM_ID')
-            away_team_id = game_data.get('AWAY_TEAM_ID')
-            
-            # If team IDs weren't provided, try to get them from box score
-            if home_team_id is None or away_team_id is None:
-                game_summary = next((rs for rs in result_sets if rs['name'] == 'GameSummary'), None)
-                if game_summary and game_summary.get('rowSet'):
-                    summary_headers = {h: i for i, h in enumerate(game_summary['headers'])}
-                    summary_row = game_summary['rowSet'][0]
-                    home_team_id = int(summary_row[summary_headers['HOME_TEAM_ID']])
-                    away_team_id = int(summary_row[summary_headers['VISITOR_TEAM_ID']])
-                elif team_stats_set and team_stats_set.get('rowSet'):
-                    team_headers = {h: i for i, h in enumerate(team_stats_set['headers'])}
-                    team1_id = int(team_stats_set['rowSet'][0][team_headers['TEAM_ID']])
-                    team2_id = int(team_stats_set['rowSet'][1][team_headers['TEAM_ID']])
-                    home_team_id = team1_id  # Assume first team is home team
-                    away_team_id = team2_id
-            
-            if home_team_id is None or away_team_id is None:
-                logger.error(f"Could not determine team IDs for game {game_id}")
-                return
-
-            # Determine if this is a playoff game and which round
-            playoff_round = None
-            if len(game_id) >= 2:
-                game_type = game_id[0]  # First digit indicates game type
-                if game_type == "4":  # Playoff game
-                    round_num = int(game_id[1])  # Second digit indicates round
-                    playoff_round = {
-                        1: "First Round",
-                        2: "Conference Semifinals",
-                        3: "Conference Finals",
-                        4: "NBA Finals"
-                    }.get(round_num)
-
-            game = self.db.merge(Game(
-                game_id=game_id,
-                game_date_utc=game_date_utc,
-                home_team_id=home_team_id,
-                away_team_id=away_team_id,
-                status='Upcoming',  # Default to upcoming
-                season_year=season,
-                playoff_round=playoff_round,
-                last_updated=datetime.utcnow()
-            ))
-            
-            try:
-                self.db.commit()
-            except Exception as e:
-                if "unique_game_matchup" in str(e):
-                    logger.info(f"Game {game_id} already exists, updating instead")
-                    self.db.rollback()
+                # Add a delay before each request to respect rate limits
+                if attempt > 0:
+                    await asyncio.sleep(base_delay * (2**attempt))
                 else:
+                    await asyncio.sleep(1.0)  # Always wait at least 1 second
+
+                # Run sync endpoint call in thread
+                endpoint = await asyncio.to_thread(endpoint_class, **kwargs)
+                return await asyncio.to_thread(endpoint.get_dict)
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "Too Many Requests" in error_str:
+                    # Special handling for rate limit errors
+                    delay = base_delay * (3**attempt) + random.uniform(
+                        1, 3
+                    )  # Longer delays for rate limits
+                    logger.warning(
+                        f"Rate limit hit (attempt {attempt + 1}/{max_retries}), waiting {delay:.1f}s: {e}"
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(delay)
+                        continue
+
+                if attempt == max_retries - 1:
                     raise
 
-            # Process team stats if available
-            if team_stats_set and team_stats_set.get('rowSet'):
-                team_stats = team_stats_set['rowSet']
-                team_headers = {h: i for i, h in enumerate(team_stats_set['headers'])}
-                
-                try:
-                    team1_id = int(team_stats[0][team_headers['TEAM_ID']])
-                    team2_id = int(team_stats[1][team_headers['TEAM_ID']])
-                    
-                    # Look for points in different possible header names
-                    pts_index = team_headers.get('PTS', team_headers.get('TEAM_PTS', team_headers.get('POINTS', -1)))
-                    if pts_index != -1:
-                        team1_score = int(team_stats[0][pts_index]) if team_stats[0][pts_index] is not None else None
-                        team2_score = int(team_stats[1][pts_index]) if team_stats[1][pts_index] is not None else None
-                        
-                        logger.info(f"Processing scores for game {game_id}: Team1 ({team1_id}): {team1_score}, Team2 ({team2_id}): {team2_score}")
-                        
-                        # Update game scores based on home/away teams
-                        if game.home_team_id == team1_id:
-                            game.home_score = team1_score
-                            game.away_score = team2_score
-                        else:
-                            game.home_score = team2_score
-                            game.away_score = team1_score
-                            
-                        # Update game status based on score availability
-                        if game.home_score is not None and game.away_score is not None:
-                            game.status = 'Completed'
-                            logger.info(f"Marked game {game_id} as Completed with final score: Home {game.home_score} - Away {game.away_score}")
-                        elif game.status != 'Upcoming':
-                            game.status = 'Live'
-                            logger.info(f"Marked game {game_id} as Live with current score: Home {game.home_score} - Away {game.away_score}")
-                            
-                        game.last_updated = datetime.utcnow()
-                        self.db.commit()
-                        
-                except Exception as e:
-                    logger.error(f"Error processing team stats for game {game_id}: {str(e)}")
-                    self.db.rollback()
-                    return
+                delay = base_delay * (2**attempt) + random.uniform(0, 1)
+                logger.warning(
+                    f"NBA API request failed (attempt {attempt + 1}/{max_retries}): {e}"
+                )
+                await asyncio.sleep(delay)
 
-            # Process player stats for completed games
-            if game.status == 'Completed' and player_stats_set and player_stats_set.get('rowSet'):
-                # Check if stats already exist
-                existing_stats = self.db.query(PlayerGameStats).filter_by(game_id=game_id).count()
-                if existing_stats > 0:
-                    logger.info(f"Stats already exist for game {game_id}, skipping player stats processing")
-                    return
+        raise Exception("NBA API request failed after all retries")
 
-                player_headers = {h: i for i, h in enumerate(player_stats_set['headers'])}
-                for player_row in player_stats_set['rowSet']:
+    async def _get_status(self) -> Optional[DataUpdateStatus]:
+        """Get or create status object with proper initialization"""
+        async with self._status_lock:
+            if self._status:
+                return self._status
+
+            # Try to get existing status
+            stmt = sa_select(DataUpdateStatus)
+            result = await self.db.execute(stmt)
+            self._status = result.scalar_one_or_none()
+
+            if not self._status:
+                # Create new status if none exists
+                self._status = DataUpdateStatus(
+                    id=1,
+                    is_updating=False,
+                    cancellation_requested=False,
+                    teams_updated=False,
+                    players_updated=False,
+                    games_updated=False,
+                    teams_percent_complete=0,
+                    players_percent_complete=0,
+                    games_percent_complete=0,
+                    current_phase=None,
+                    current_detail=None,
+                    components={},
+                )
+                self.db.add(self._status)
+                await self._safe_commit()
+                await self.db.refresh(self._status)
+
+            return self._status
+
+    async def _init_component(self, status: DataUpdateStatus, component: str) -> None:
+        """Initialize component status"""
+        if not isinstance(status.components, dict):
+            status.components = {}
+
+        if component not in status.components:
+            status.components[component] = {}
+
+        status.components[component].update(
+            {
+                "updated": False,
+                "percent_complete": 0,
+                "last_error": None,
+                "start_time": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+    async def update_team_players(self, team_id: Optional[int] = None) -> None:
+        """Update player information for a specific team or all teams"""
+        try:
+            # Initialize update state using utility
+            await initialize_status("players", self.db)
+
+            # If no team_id provided, update all teams
+            if team_id is None:
+                team_ids = await self._get_all_team_ids()
+                total_teams = len(team_ids)
+                if total_teams == 0:
+                    error_msg = "No teams found to update players"
+                    logger.error(error_msg)
+                    await handle_component_error("players", error_msg, self.db)
+                    raise ValueError(error_msg)
+
+                processed_teams = 0
+                for current_team_id in team_ids:
+                    await self._check_cancellation()
                     try:
-                        player_data = {
-                            'PLAYER_ID': int(player_row[player_headers['PLAYER_ID']]),
-                            'TEAM_ID': int(player_row[player_headers['TEAM_ID']]),
-                            'MIN': str(player_row[player_headers['MIN']]) if player_row[player_headers['MIN']] else '0',
-                            'PTS': int(player_row[player_headers['PTS']]) if player_row[player_headers['PTS']] else 0,
-                            'REB': int(player_row[player_headers['REB']]) if player_row[player_headers['REB']] else 0,
-                            'AST': int(player_row[player_headers['AST']]) if player_row[player_headers['AST']] else 0,
-                            'STL': int(player_row[player_headers['STL']]) if player_row[player_headers['STL']] else 0,
-                            'BLK': int(player_row[player_headers['BLK']]) if player_row[player_headers['BLK']] else 0,
-                            'FGM': int(player_row[player_headers['FGM']]) if player_row[player_headers['FGM']] else 0,
-                            'FGA': int(player_row[player_headers['FGA']]) if player_row[player_headers['FGA']] else 0,
-                            'FG_PCT': float(player_row[player_headers['FG_PCT']]) if player_row[player_headers['FG_PCT']] else 0.0,
-                            'FG3M': int(player_row[player_headers['FG3M']]) if player_row[player_headers['FG3M']] else 0,
-                            'FG3A': int(player_row[player_headers['FG3A']]) if player_row[player_headers['FG3A']] else 0,
-                            'FG3_PCT': float(player_row[player_headers['FG3_PCT']]) if player_row[player_headers['FG3_PCT']] else 0.0,
-                            'FTM': int(player_row[player_headers['FTM']]) if player_row[player_headers['FTM']] else 0,
-                            'FTA': int(player_row[player_headers['FTA']]) if player_row[player_headers['FTA']] else 0,
-                            'FT_PCT': float(player_row[player_headers['FT_PCT']]) if player_row[player_headers['FT_PCT']] else 0.0,
-                            'TO': int(player_row[player_headers['TO']]) if player_row[player_headers['TO']] else 0,
-                            'PF': int(player_row[player_headers['PF']]) if player_row[player_headers['PF']] else 0,
-                            'PLUS_MINUS': float(player_row[player_headers['PLUS_MINUS']]) if player_row[player_headers['PLUS_MINUS']] else 0
-                        }
-                        await self._process_player_stats(player_data, game_id)
+                        await self._update_single_team_players(current_team_id)
+                        processed_teams += 1
+                        await update_progress(
+                            "players", processed_teams, total_teams, self.db
+                        )
                     except Exception as e:
-                        logger.error(f"Error processing player row in game {game_id}: {str(e)}")
-                        continue
-                        
-        except Exception as e:
-            logger.error(f"Error in _process_game for {game_id}: {str(e)}")
-            self.db.rollback()
-            raise
-
-    async def cleanup_old_seasons(self):
-        """Clean up data from old seasons"""
-        try:
-            current_season = self._get_current_season()
-            logger.info(f"Cleaning up data for seasons before {current_season}")
-            
-            # Keep playoff games from the previous season
-            previous_season = f"{int(current_season.split('-')[0])-1}-{int(current_season.split('-')[1])-1}"
-            
-            # Delete games from older seasons, keeping playoff games from previous season
-            self.db.query(Game).filter(
-                (Game.season_year < previous_season) |
-                ((Game.season_year == previous_season) & (Game.playoff_round.is_(None)))
-            ).delete(synchronize_session=False)
-            
-            self.db.commit()
-            logger.info("Old seasons cleanup completed")
-            
-        except Exception as e:
-            logger.error(f"Error in cleanup_old_seasons: {str(e)}")
-            self.db.rollback()
-            raise
-
-    async def _process_player_stats(self, player_data: dict, game_id: str):
-        """Process and store player statistics for a game"""
-        try:
-            # Convert minutes played to total minutes
-            minutes_str = player_data.get('MIN', '0')
-            if ':' in minutes_str:  # Format like "32:45"
-                minutes, seconds = map(int, minutes_str.split(':'))
-                total_minutes = str(minutes) + ":" + str(seconds).zfill(2)  # Format as "MM:SS"
+                        error_msg = (
+                            f"Error updating team {current_team_id} players: {str(e)}"
+                        )
+                        logger.error(error_msg)
+                        await handle_component_error("players", error_msg, self.db)
+                        raise
             else:
-                # Convert float minutes to MM:SS format
-                minutes = int(float(minutes_str))
-                seconds = int((float(minutes_str) % 1) * 60)
-                total_minutes = str(minutes) + ":" + str(seconds).zfill(2)
+                # Update single team
+                try:
+                    await self._update_single_team_players(team_id)
+                    await update_progress("players", 1, 1, self.db)
+                except Exception as e:
+                    error_msg = f"Error updating team {team_id} players: {str(e)}"
+                    logger.error(error_msg)
+                    await handle_component_error("players", error_msg, self.db)
+                    raise
 
-            # Create or update player game stats
-            stats = PlayerGameStats(
-                game_id=game_id,
-                player_id=player_data['PLAYER_ID'],
-                team_id=player_data['TEAM_ID'],
-                minutes=total_minutes,
-                points=player_data['PTS'],
-                rebounds=player_data['REB'],
-                assists=player_data['AST'],
-                steals=player_data['STL'],
-                blocks=player_data['BLK'],
-                fgm=player_data['FGM'],  # Changed from field_goals_made
-                fga=player_data['FGA'],  # Changed from field_goals_attempted
-                fg_pct=player_data['FG_PCT'],  # Changed from field_goal_percentage
-                tpm=player_data['FG3M'],  # Changed from three_pointers_made
-                tpa=player_data['FG3A'],  # Changed from three_pointers_attempted
-                tp_pct=player_data['FG3_PCT'],  # Changed from three_point_percentage
-                ftm=player_data['FTM'],  # Changed from free_throws_made
-                fta=player_data['FTA'],  # Changed from free_throws_attempted
-                ft_pct=player_data['FT_PCT'],  # Changed from free_throw_percentage
-                turnovers=player_data['TO'],
-                fouls=player_data['PF'],
-                plus_minus=player_data['PLUS_MINUS']
-            )
-            
-            self.db.merge(stats)
-            self.db.commit()
-            
-        except Exception as e:
-            self.db.rollback()
-            logger.error(f"Error processing player stats for game {game_id}: {str(e)}")
+            # Finalize component on success
+            await finalize_component("players", self.db)
+
+        except TaskCancelledError:
+            # Let cancellation propagate up
             raise
+        except Exception as e:
+            error_msg = f"Error updating players: {str(e)}"
+            logger.error(error_msg)
+            await handle_component_error("players", error_msg, self.db)
+            raise
+
+    async def _update_single_team_players(self, team_id: int) -> None:
+        """Update players for a single team."""
+        try:
+            # Get team roster
+            await self._check_cancellation()
+
+            # Add a delay before making the roster request to respect rate limits
+            await asyncio.sleep(2.0)  # 2 second delay between team roster requests
+
+            try:
+                # Fetch roster in thread to avoid blocking event loop
+                roster = await asyncio.to_thread(
+                    commonteamroster.CommonTeamRoster, team_id=str(team_id)
+                )
+                roster_dict = await asyncio.to_thread(roster.get_dict)
+
+                if not roster_dict or "resultSets" not in roster_dict:
+                    error_msg = f"Invalid roster response for team {team_id}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+
+                player_data = roster_dict["resultSets"][0]["rowSet"]
+            except Exception as e:
+                error_msg = f"Failed to fetch roster for team {team_id}: {str(e)}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            total_players = len(player_data)
+            processed_players = 0
+
+            for player_row in player_data:
+                await self._check_cancellation()
+                current_player_id = None
+                try:
+                    current_player_id = int(
+                        player_row[14]
+                    )  # PLAYER_ID column (index 14)
+                    player = await self._get_or_create_player(current_player_id)
+
+                    if player:
+                        # Update player info
+                        await self._update_player_info(player, player_row)
+                        processed_players += 1
+                        await update_progress(
+                            "players", processed_players, total_players, self.db
+                        )
+
+                except Exception as e:
+                    error_msg = f"Error updating player {current_player_id}: {str(e)}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+
+            # Update team info
+            team = (
+                await self.db.execute(sa_select(Team).filter(Team.team_id == team_id))
+            ).scalar_one_or_none()
+            now = datetime.now(timezone.utc)
+            if team:
+                team.roster_loaded = True
+                team.loading_progress = 100
+                team.last_updated = now
+                await self._safe_commit()
+
+        except TaskCancelledError:
+            raise
+        except Exception as e:
+            error_msg = f"Error updating team {team_id} players: {str(e)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    async def update_games(self) -> None:
+        """Update game information from NBA API"""
+        try:
+            # Initialize update state
+            await initialize_status("games", self.db)
+
+            await self._check_cancellation()
+
+            # TODO: Implement game updates here
+            # Placeholder for now - just complete successfully
+            await update_progress("games", 1, 1, self.db)
+
+            # Finalize on success
+            await finalize_component("games", self.db)
+
+        except TaskCancelledError:
+            # Let cancellation propagate up
+            raise
+        except Exception as e:
+            error_msg = f"Error in games update process: {str(e)}"
+            logger.error(error_msg)
+            await handle_component_error("games", error_msg, self.db)
+            raise
+
+    async def update_team_games(self, team_id: int) -> None:
+        """Update game information for a specific team"""
+        try:
+            # Initialize update state
+            await initialize_status("games", self.db)
+
+            await self._check_cancellation()
+
+            # Get games for this team
+            stmt = select(Game).filter(
+                (Game.home_team_id == team_id) | (Game.away_team_id == team_id)
+            )
+            result = await self.db.execute(stmt)
+            team_games = result.scalars().all()
+
+            if not team_games:
+                logger.warning(f"No games found for team {team_id}")
+                await update_progress("games", 1, 1, self.db)
+                await finalize_component("games", self.db)
+                return
+
+            total_games = len(team_games)
+            processed_games = 0
+
+            for game in team_games:
+                await self._check_cancellation()
+
+                # Mark game as loaded and update timestamp
+                game.is_loaded = True
+                game.last_updated = datetime.now(timezone.utc)
+
+                processed_games += 1
+                await update_progress("games", processed_games, total_games, self.db)
+                await self._safe_commit()
+
+            # Update team games_loaded status
+            team_stmt = select(Team).filter(Team.team_id == team_id)
+            team_result = await self.db.execute(team_stmt)
+            team = team_result.scalar_one_or_none()
+            if team:
+                team.games_loaded = True
+                team.last_updated = datetime.now(timezone.utc)
+                await self._safe_commit()
+
+            # Finalize on success
+            await finalize_component("games", self.db)
+
+        except TaskCancelledError:
+            # Let cancellation propagate up
+            raise
+        except Exception as e:
+            error_msg = f"Error updating team {team_id} games: {str(e)}"
+            logger.error(error_msg)
+            await handle_component_error("games", error_msg, self.db)
+            raise
+
+    async def update_teams(self) -> None:
+        """Update team information from NBA API"""
+        try:
+            # Initialize update state using utility
+            await initialize_status("teams", self.db)
+
+            await self._check_cancellation()
+
+            # Get list of teams from NBA API with retries
+            team_data = await self._fetch_team_data()
+            team_ids = self._extract_team_ids(team_data)
+
+            if not team_ids:
+                error_msg = "No valid team IDs found in API response"
+                logger.error(error_msg)
+                await handle_component_error("teams", error_msg, self.db)
+                raise ValueError(error_msg)
+
+            total_teams = len(team_ids)
+            processed_teams = 0
+
+            # Process each team
+            for team_id in team_ids:
+                await self._check_cancellation()
+                try:
+                    await self._update_single_team(team_id)
+                    processed_teams += 1
+                    await update_progress(
+                        "teams", processed_teams, total_teams, self.db
+                    )
+                except Exception as e:
+                    error_msg = f"Error updating team {team_id}: {str(e)}"
+                    logger.error(error_msg)
+                    await handle_component_error("teams", error_msg, self.db)
+                    raise ValueError(error_msg)
+
+            # Finalize component on success
+            await finalize_component("teams", self.db)
+
+        except TaskCancelledError:
+            # Let cancellation propagate up
+            raise
+        except Exception as e:
+            error_msg = f"Error in team update process: {str(e)}"
+            logger.error(error_msg)
+            await handle_component_error("teams", error_msg, self.db)
+            raise
+
+    async def _get_or_create_player(self, player_id: int) -> Player:
+        """Get or create a player record"""
+        stmt = select(Player).filter_by(player_id=player_id)
+        result = await self.db.execute(stmt)
+        player = result.scalar_one_or_none()
+
+        if not player:
+            player = Player(player_id=player_id)
+            self.db.add(player)
+            await self._safe_commit()
+
+        return player
+
+    async def _get_or_create_team(
+        self, team_id: int, name: str = None, abbreviation: str = None
+    ) -> Team:
+        """Get or create a team record"""
+        stmt = select(Team).filter_by(team_id=team_id)
+        result = await self.db.execute(stmt)
+        team = result.scalar_one_or_none()
+
+        if not team:
+            # Create team with required fields
+            team_name = name or f"Team {team_id}"  # Fallback name if none provided
+            team_abbreviation = abbreviation or ""
+
+            team = Team(team_id=team_id, name=team_name, abbreviation=team_abbreviation)
+            self.db.add(team)
+            await self._safe_commit()
+
+        return team
+
+    async def _update_player_info(self, player: Player, player_row: list) -> None:
+        """Update player information"""
+        player.full_name = str(player_row[3] or "")  # PLAYER column (index 3)
+        player.first_name = str(player_row[3].split()[0] if player_row[3] else "")
+        player.last_name = str(player_row[3].split()[-1] if player_row[3] else "")
+        player.position = str(player_row[7] or "")  # POSITION column (index 7)
+        player.jersey_number = str(player_row[6] or "")  # NUM column (index 6)
+        player.is_active = True
+        player.last_updated = datetime.now(timezone.utc)
+        await self._safe_commit()
+
+    async def _fetch_team_data(self) -> Any:
+        """Fetch team data from NBA API"""
+        # Use static teams data which is more reliable
+        from nba_api.stats.static import teams as static_teams
+
+        return static_teams.get_teams()
+
+    def _extract_team_ids(self, team_data: Any) -> List[int]:
+        """Extract team IDs from NBA API response"""
+        if team_data and isinstance(team_data, list):
+            # Using static teams data
+            return [team["id"] for team in team_data if team.get("id")]
+        return []
+
+    async def _update_single_team(self, team_id: int) -> None:
+        """Update information for a single team"""
+        try:
+            # Use static teams data which is more reliable and doesn't cause rate limiting
+            from nba_api.stats.static import teams as static_teams
+
+            # Get static teams data - this is a simple function call, no need for asyncio.to_thread
+            static_team_data = static_teams.get_teams()
+
+            # Find the team by ID
+            team_info = None
+            for static_team in static_team_data:
+                if static_team["id"] == team_id:
+                    team_info = static_team
+                    break
+
+            if not team_info:
+                logger.warning(f"No static data found for team {team_id}")
+                return
+
+            # Pre-calculate name and abbreviation for team creation
+            city = team_info.get("city", "") or ""
+            nickname = team_info.get("nickname", "") or ""
+            full_name = team_info.get("full_name", "") or ""
+
+            # Use full_name if available, otherwise construct from city + nickname
+            if full_name:
+                team_name = full_name
+            elif city and nickname:
+                team_name = f"{city} {nickname}".strip()
+            elif nickname:
+                team_name = nickname
+            elif city:
+                team_name = city
+            else:
+                # Fallback to abbreviation or team ID if nothing else is available
+                team_name = team_info.get("abbreviation", f"Team {team_id}")
+
+            team_abbreviation = team_info.get("abbreviation", "") or ""
+
+            # Get or create team with the required data
+            team = await self._get_or_create_team(team_id, team_name, team_abbreviation)
+
+            if team:
+                # Update team data
+                team.name = team_name
+                team.abbreviation = team_abbreviation
+                # Set default values for fields that aren't in static data
+                # Don't check existing values to avoid lazy loading - just set defaults
+                team.conference = ""
+                team.division = ""
+                team.is_active = True
+                team.last_updated = datetime.now(timezone.utc)
+                await self._safe_commit()
+
+        except Exception as e:
+            error_msg = f"Error updating team {team_id}: {str(e)}"
+            logger.error(error_msg)
+            raise
+
+    async def update_game(self, game_id: str) -> None:
+        """Update information for a single game"""
+        try:
+            # Initialize status
+            await initialize_status("games", self.db)
+            await update_progress("games", 0, 1, self.db)
+
+            # Get game info with retries and timeout
+            try:
+                game_info = await asyncio.wait_for(
+                    self._make_nba_request(
+                        boxscoretraditionalv2.BoxScoreTraditionalV2, game_id=game_id
+                    ),
+                    timeout=settings.nba_api.timeout,
+                )
+
+                if not game_info.get("resultSets", [{}])[0].get("rowSet"):
+                    logger.warning(f"No data returned for game {game_id}")
+                    return
+
+                # Update game with stats
+                await self._update_game_stats(game_id, game_info)
+                await update_progress("games", 1, 1, self.db)
+                await finalize_component("games", self.db)
+
+            except (asyncio.TimeoutError, Exception) as e:
+                error_msg = f"Error updating game {game_id}: {str(e)}"
+                logger.error(error_msg)
+                await handle_component_error("games", error_msg, self.db)
+                raise ValueError(error_msg)
+
+        except Exception as e:
+            error_msg = f"Error updating game {game_id}: {str(e)}"
+            logger.error(error_msg)
+            await handle_component_error("games", error_msg, self.db)
+            raise ValueError(error_msg)
+
+    async def _initialize_component_status(self, component: str) -> None:
+        """Initialize component status - internal helper method"""
+        await initialize_status(component, self.db)
+
+    async def _finalize_component_update(self, component: str) -> None:
+        """Finalize component update - internal helper method"""
+        await finalize_component(component, self.db)
+
+    async def _handle_component_error(self, component: str, error_msg: str) -> None:
+        """Handle component error - internal helper method"""
+        await handle_component_error(component, error_msg, self.db)
+
+    async def _update_game_stats(self, game_id: str, game_info: dict) -> None:
+        """Update game stats"""
+        # Get game record
+        stmt = select(Game).filter_by(game_id=game_id)
+        result = await self.db.execute(stmt)
+        game = result.scalar_one_or_none()
+        if not game:
+            return
+
+        # Update game
+        try:
+            # Update game stats
+            game.is_loaded = True
+            game.last_updated = datetime.now(timezone.utc)
+
+            player_stats = game_info["resultSets"][0]["rowSet"]
+            for row in player_stats:
+                player_id = row[4]  # PLAYER_ID
+
+                stmt = select(PlayerGameStats).filter_by(
+                    game_id=game_id, player_id=player_id
+                )
+                result = await self.db.execute(stmt)
+                stats = result.scalar_one_or_none()
+
+                if not stats:
+                    stats = PlayerGameStats(
+                        game_id=game_id, player_id=player_id, team_id=row[1]  # TEAM_ID
+                    )
+                    self.db.add(stats)
+
+                # Update stats using correct field names from the model
+                stats.minutes = str(row[8] or "")  # MIN
+                stats.fgm = int(row[9] or 0)  # FGM
+                stats.fga = int(row[10] or 0)  # FGA
+                stats.fg_pct = float(row[11] or 0)  # FG_PCT
+                stats.tpm = int(row[12] or 0)  # FG3M
+                stats.tpa = int(row[13] or 0)  # FG3A
+                stats.tp_pct = float(row[14] or 0)  # FG3_PCT
+                stats.ftm = int(row[15] or 0)  # FTM
+                stats.fta = int(row[16] or 0)  # FTA
+                stats.ft_pct = float(row[17] or 0)  # FT_PCT
+                stats.rebounds = int(row[18] or 0)  # REB
+                stats.assists = int(row[19] or 0)  # AST
+                stats.steals = int(row[20] or 0)  # STL
+                stats.blocks = int(row[21] or 0)  # BLK
+                stats.turnovers = int(row[22] or 0)  # TO
+                stats.points = int(row[24] or 0)  # PTS
+
+            await self._safe_commit()
+
+        except Exception as e:
+            error_msg = f"Error updating game stats for {game_id}: {str(e)}"
+            logger.error(error_msg)
+            await handle_component_error("games", error_msg, self.db)
+            raise
+
+    async def update_all_data(self) -> None:
+        """Update all NBA data (teams, players, and games)"""
+        try:
+            await self._check_cancellation()
+            await self.update_teams()
+
+            await self._check_cancellation()
+            await self.update_team_players()
+
+            await self._check_cancellation()
+            await self.update_games()
+
+        except TaskCancelledError:
+            raise  # Let the router handle cancellation cleanup
+        except Exception as e:
+            error_msg = f"Error in full update process: {str(e)}"
+            logger.error(error_msg)
+            raise
+
+    async def _get_all_team_ids(self) -> List[int]:
+        """Get all team IDs from the database"""
+        stmt = select(Team.team_id)
+        result = await self.db.execute(stmt)
+        return [r[0] for r in result.fetchall()]

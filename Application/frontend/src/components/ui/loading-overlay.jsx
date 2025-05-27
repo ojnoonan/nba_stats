@@ -1,4 +1,4 @@
-import { LoadingSpinner } from './loading-spinner'
+import { LoadingSpinner } from "./loading-spinner";
 
 export function LoadingOverlay({ progress, isLoading, children }) {
   return (
@@ -17,5 +17,5 @@ export function LoadingOverlay({ progress, isLoading, children }) {
         </div>
       )}
     </div>
-  )
+  );
 }

@@ -1,249 +1,277 @@
 // Always use relative path for API URL
-const API_BASE_URL = '/api'
+const API_BASE_URL = "/api";
 
-const RETRY_COUNT = 3
-const RETRY_DELAY = 1000
-const REQUEST_TIMEOUT = 15000
+const RETRY_COUNT = 3;
+const RETRY_DELAY = 1000;
+const REQUEST_TIMEOUT = 15000;
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 class ApiError extends Error {
   constructor(message, status) {
-    super(message)
-    this.status = status
-    this.name = 'ApiError'
+    super(message);
+    this.status = status;
+    this.name = "ApiError";
   }
 }
 
 const fetchWithRetry = async (url, options = {}) => {
-  let lastError
-  
+  let lastError;
+
   for (let i = 0; i < RETRY_COUNT; i++) {
     try {
-      const cleanUrl = url.replace(/\/+$/, '')
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
-      
+      const cleanUrl = url.replace(/\/+$/, "");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
       const response = await fetch(cleanUrl, {
         ...options,
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           ...options.headers,
         },
-        signal: controller.signal
-      })
-      
-      clearTimeout(timeoutId)
-      
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        throw new ApiError(`HTTP error: ${response.status}`, response.status)
+        throw new ApiError(`HTTP error: ${response.status}`, response.status);
       }
-      
-      const data = await response.json()
-      return data
+
+      const data = await response.json();
+      return data;
     } catch (error) {
-      lastError = error
-      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
-        throw error // Don't retry client errors
+      lastError = error;
+      if (
+        error instanceof ApiError &&
+        error.status >= 400 &&
+        error.status < 500
+      ) {
+        throw error; // Don't retry client errors
       }
       if (i < RETRY_COUNT - 1) {
-        await sleep(RETRY_DELAY * Math.pow(2, i))
-        continue
+        await sleep(RETRY_DELAY * Math.pow(2, i));
+        continue;
       }
     }
   }
-  
-  throw lastError
-}
+
+  throw lastError;
+};
 
 export const fetchTeams = async () => {
   try {
-    return await fetchWithRetry(`${API_BASE_URL}/teams`)
+    return await fetchWithRetry(`${API_BASE_URL}/teams`);
   } catch (error) {
-    console.error('Failed to fetch teams:', error)
-    throw new Error('Failed to fetch teams')
+    console.error("Failed to fetch teams:", error);
+    throw new Error("Failed to fetch teams");
   }
-}
+};
 
 export const fetchTeam = async (teamId) => {
   try {
-    return await fetchWithRetry(`${API_BASE_URL}/teams/${teamId}`)
+    return await fetchWithRetry(`${API_BASE_URL}/teams/${teamId}`);
   } catch (error) {
-    console.error('Failed to fetch team:', error)
-    throw new Error('Failed to fetch team')
+    console.error("Failed to fetch team:", error);
+    throw new Error("Failed to fetch team");
   }
-}
+};
 
 export const fetchPlayers = async (teamId = null, activeOnly = true) => {
   try {
-    const params = new URLSearchParams()
-    if (teamId) params.append('team_id', teamId)
-    if (activeOnly) params.append('active_only', activeOnly)
-    
-    const url = `${API_BASE_URL}/players${params.toString() ? `?${params}` : ''}`
-    return await fetchWithRetry(url)
+    const params = new URLSearchParams();
+    if (teamId) params.append("team_id", teamId);
+    if (activeOnly) params.append("active_only", activeOnly);
+
+    const url = `${API_BASE_URL}/players${params.toString() ? `?${params}` : ""}`;
+    return await fetchWithRetry(url);
   } catch (error) {
-    console.error('Failed to fetch players:', error)
-    throw new Error('Failed to fetch players')
+    console.error("Failed to fetch players:", error);
+    throw new Error("Failed to fetch players");
   }
-}
+};
 
 export const fetchPlayer = async (playerId) => {
   try {
-    return await fetchWithRetry(`${API_BASE_URL}/players/${playerId}`)
+    console.log(`Fetching player with ID: ${playerId}`);
+    const url = `${API_BASE_URL}/players/${playerId}`;
+    console.log(`Full URL: ${url}`);
+    const data = await fetchWithRetry(url);
+    console.log("Player data received:", data);
+    return data;
   } catch (error) {
-    console.error('Failed to fetch player:', error)
-    throw new Error('Failed to fetch player')
+    console.error("Failed to fetch player:", error);
+    throw error; // Changed to throw the original error for better debugging
   }
-}
+};
 
 export const fetchPlayerStats = async (playerId, limit = null) => {
   try {
-    const params = new URLSearchParams()
-    if (limit) params.append('limit', limit)
-    
-    const url = `${API_BASE_URL}/players/${playerId}/stats${params.toString() ? `?${params}` : ''}`
-    return await fetchWithRetry(url)
-  } catch (error) {
-    console.error('Failed to fetch player stats:', error)
-    throw new Error('Failed to fetch player stats')
-  }
-}
+    const params = new URLSearchParams();
+    if (limit) params.append("limit", limit);
 
-export const fetchGames = async (teamId = null, status = null, playerId = null) => {
-  try {
-    const params = new URLSearchParams()
-    if (teamId) params.append('team_id', teamId)
-    if (status) params.append('status', status)
-    if (playerId) params.append('player_id', playerId)
-    
-    const url = `${API_BASE_URL}/games${params.toString() ? `?${params}` : ''}`
-    return await fetchWithRetry(url)
+    const url = `${API_BASE_URL}/players/${playerId}/stats${params.toString() ? `?${params}` : ""}`;
+    return await fetchWithRetry(url);
   } catch (error) {
-    console.error('Failed to fetch games:', error)
-    throw new Error('Failed to fetch games')
+    console.error("Failed to fetch player stats:", error);
+    throw new Error("Failed to fetch player stats");
   }
-}
+};
+
+export const fetchGames = async (
+  teamId = null,
+  status = null,
+  playerId = null,
+) => {
+  try {
+    const params = new URLSearchParams();
+    if (teamId) params.append("team_id", teamId);
+    if (status) params.append("status", status);
+    if (playerId) params.append("player_id", playerId);
+
+    const url = `${API_BASE_URL}/games${params.toString() ? `?${params}` : ""}`;
+    return await fetchWithRetry(url);
+  } catch (error) {
+    console.error("Failed to fetch games:", error);
+    throw new Error("Failed to fetch games");
+  }
+};
 
 export const fetchGame = async (gameId) => {
   try {
-    return await fetchWithRetry(`${API_BASE_URL}/games/${gameId}`)
+    return await fetchWithRetry(`${API_BASE_URL}/games/${gameId}`);
   } catch (error) {
-    console.error('Failed to fetch game:', error)
-    throw new Error('Failed to fetch game')
+    console.error("Failed to fetch game:", error);
+    throw new Error("Failed to fetch game");
   }
-}
+};
 
 export const fetchGameStats = async (gameId) => {
   try {
-    return await fetchWithRetry(`${API_BASE_URL}/games/${gameId}/stats`)
+    return await fetchWithRetry(`${API_BASE_URL}/games/${gameId}/stats`);
   } catch (error) {
-    console.error('Failed to fetch game stats:', error)
-    throw new Error('Failed to fetch game stats')
+    console.error("Failed to fetch game stats:", error);
+    throw new Error("Failed to fetch game stats");
   }
-}
+};
 
 export const fetchStatus = async () => {
   try {
-    return await fetchWithRetry(`${API_BASE_URL}/status`)
+    // Set no-cache headers to ensure we get fresh data
+    const options = {
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
+    };
+    return await fetchWithRetry(`${API_BASE_URL}/admin/status`, options);
   } catch (error) {
-    console.error('Failed to fetch update status:', error)
-    throw new Error('Failed to fetch update status')
+    console.error("Failed to fetch update status:", error);
+    throw new Error("Failed to fetch update status");
   }
-}
+};
 
 export const triggerUpdate = async (types = null) => {
   try {
-    const url = `${API_BASE_URL}/update`
+    const url = `${API_BASE_URL}/update`;
     const options = {
-      method: 'POST'
-    }
-    
+      method: "POST",
+    };
+
     if (types && types.length > 0) {
       options.headers = {
-        'Content-Type': 'application/json'
-      }
-      options.body = JSON.stringify({ update_types: types })
+        "Content-Type": "application/json",
+      };
+      options.body = JSON.stringify({ update_types: types });
     }
-    
-    return await fetchWithRetry(url, options)
+
+    return await fetchWithRetry(url, options);
   } catch (error) {
-    console.error('Failed to trigger update:', error)
-    throw new Error('Failed to trigger update')
+    console.error("Failed to trigger update:", error);
+    throw new Error("Failed to trigger update");
   }
-}
+};
 
 export const triggerGamesUpdate = async () => {
-  return triggerUpdate(['games'])
-}
+  return triggerUpdate(["games"]);
+};
 
 export const triggerTeamsUpdate = async () => {
-  return triggerUpdate(['teams'])
-}
+  return triggerUpdate(["teams"]);
+};
 
 export const triggerPlayersUpdate = async () => {
-  return triggerUpdate(['players'])
-}
+  return triggerUpdate(["players"]);
+};
 
 export const cancelUpdate = async () => {
   try {
     return await fetchWithRetry(`${API_BASE_URL}/reset-update-status`, {
-      method: 'POST'
-    })
+      method: "POST",
+    });
   } catch (error) {
-    console.error('Failed to cancel update:', error)
-    throw new Error('Failed to cancel update')
+    console.error("Failed to cancel update:", error);
+    throw new Error("Failed to cancel update");
   }
-}
+};
 
 export const cancelAdminUpdate = async () => {
   try {
     return await fetchWithRetry(`${API_BASE_URL}/admin/update/cancel`, {
-      method: 'POST'
+      method: "POST",
     });
   } catch (error) {
-    console.error('Failed to cancel admin update:', error);
-    throw new Error('Failed to cancel admin update');
+    console.error("Failed to cancel admin update:", error);
+    throw new Error("Failed to cancel admin update");
   }
 };
 
 export const searchTeamsAndPlayers = async (term) => {
   try {
-    const params = new URLSearchParams({ term })
-    return await fetchWithRetry(`${API_BASE_URL}/search?${params}`)
+    const params = new URLSearchParams({ term });
+    return await fetchWithRetry(`${API_BASE_URL}/search?${params}`);
   } catch (error) {
-    console.error('Failed to search:', error)
-    throw new Error('Failed to search')
+    console.error("Failed to search:", error);
+    throw new Error("Failed to search");
   }
-}
+};
 
 export const fetchAdminStatus = async () => {
   try {
-    return await fetchWithRetry(`${API_BASE_URL}/admin/status`)
+    // Set no-cache headers to ensure we get fresh data
+    const options = {
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+      },
+    };
+    return await fetchWithRetry(`${API_BASE_URL}/admin/status`, options);
   } catch (error) {
-    console.error('Failed to fetch admin status:', error)
-    throw new Error('Failed to fetch admin status')
+    console.error("Failed to fetch admin status:", error);
+    throw new Error("Failed to fetch admin status");
   }
-}
+};
 
 export const triggerFullUpdate = async () => {
   try {
     return await fetchWithRetry(`${API_BASE_URL}/admin/update/all`, {
-      method: 'POST'
-    })
+      method: "POST",
+    });
   } catch (error) {
-    console.error('Failed to trigger full update:', error)
-    throw new Error('Failed to trigger full update')
+    console.error("Failed to trigger full update:", error);
+    throw new Error("Failed to trigger full update");
   }
-}
+};
 
 export const triggerComponentUpdate = async (component) => {
   try {
     return await fetchWithRetry(`${API_BASE_URL}/admin/update/${component}`, {
-      method: 'POST'
-    })
+      method: "POST",
+    });
   } catch (error) {
-    console.error('Failed to trigger component update:', error)
-    throw new Error('Failed to trigger component update')
+    console.error("Failed to trigger component update:", error);
+    throw new Error("Failed to trigger component update");
   }
-}
+};
