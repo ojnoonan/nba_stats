@@ -1,10 +1,12 @@
 import logging
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from typing import Optional
 from app.models.models import Player as PlayerModel, PlayerGameStats, Game as GameModel
 from app.database.database import get_db
+from app.schemas.validation import PlayerIdSchema, PlayerQuerySchema, PaginationSchema, validate_nba_player_id, validate_nba_team_id
 
 router = APIRouter(
     prefix="/players",
@@ -15,55 +17,145 @@ logger = logging.getLogger(__name__)
 
 @router.get("")
 async def get_players(
-    team_id: Optional[int] = None,
-    active_only: bool = True,
+    team_id: Optional[int] = Query(None, description="Filter by team ID"),
+    active_only: bool = Query(True, description="Only return active players"),
+    page: int = Query(1, ge=1, le=1000, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db)
 ):
-    """Get all players, optionally filtered by team"""
+    """Get all players, optionally filtered by team with pagination"""
     try:
+        # Validate team_id if provided
+        if team_id is not None:
+            validate_nba_team_id(team_id)
+        
+        # Calculate pagination
+        offset = (page - 1) * per_page
+        
         query = db.query(PlayerModel)
         if team_id:
             query = query.filter(PlayerModel.current_team_id == team_id)
         if active_only:
             query = query.filter(PlayerModel.is_active == True)
-        players = query.all()
-        return players
+        
+        # Get total count for pagination
+        total_count = query.count()
+        
+        # Apply pagination
+        players = query.offset(offset).limit(per_page).all()
+        
+        return {
+            "players": players,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total_count,
+                "pages": (total_count + per_page - 1) // per_page
+            }
+        }
+    except ValueError as ve:
+        logger.warning(f"Validation error in get_players: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"Error getting players: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/{player_id}")
 async def get_player(player_id: int, db: Session = Depends(get_db)):
     """Get a specific player"""
     try:
+        # Validate player ID
+        validate_nba_player_id(player_id)
+        
         player = db.query(PlayerModel).filter(PlayerModel.player_id == player_id).first()
         if player is None:
             raise HTTPException(status_code=404, detail="Player not found")
         return player
+    except ValueError as ve:
+        logger.warning(f"Validation error in get_player: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except HTTPException as he:
         raise he
     except Exception as e:
         logger.error(f"Error getting player {player_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/{player_id}/stats")
 async def get_player_stats(
     player_id: int,
-    season: Optional[str] = None,
+    season: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}$', description="Season in YYYY-YY format"),
+    page: int = Query(1, ge=1, le=1000, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db)
 ):
-    """Get all game statistics for a player, optionally filtered by season"""
+    """Get all game statistics for a player, optionally filtered by season with pagination"""
     try:
+        # Validate player ID
+        validate_nba_player_id(player_id)
+        
+        # Validate season if provided
+        if season:
+            from app.schemas.validation import sanitize_string
+            season = sanitize_string(season)
+            if not re.match(r'^\d{4}-\d{2}$', season):
+                raise ValueError("Season must be in YYYY-YY format")
+        
         # First verify player exists
         player = db.query(PlayerModel).filter(PlayerModel.player_id == player_id).first()
         if not player:
             raise HTTPException(status_code=404, detail="Player not found")
-            
+        
+        # Calculate pagination
+        offset = (page - 1) * per_page
+        
         # Get all stats with game info
         from app.models.models import Team
         query = (db.query(PlayerGameStats, GameModel)
                 .join(GameModel, PlayerGameStats.game_id == GameModel.game_id)
                 .filter(PlayerGameStats.player_id == player_id))
+        
+        if season:
+            query = query.filter(GameModel.season_year == season)
+        
+        # Get total count
+        total_count = query.count()
+        
+        # Apply pagination and ordering
+        stats = (query.order_by(desc(GameModel.game_date))
+                .offset(offset)
+                .limit(per_page)
+                .all())
+        
+        # Format response
+        formatted_stats = []
+        for stat, game in stats:
+            formatted_stats.append({
+                "game": {
+                    "game_id": game.game_id,
+                    "date": game.game_date,
+                    "season": game.season_year,
+                    "home_team_id": game.home_team_id,
+                    "away_team_id": game.away_team_id
+                },
+                "stats": stat
+            })
+        
+        return {
+            "player_id": player_id,
+            "stats": formatted_stats,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total_count,
+                "pages": (total_count + per_page - 1) // per_page
+            }
+        }
+    except ValueError as ve:
+        logger.warning(f"Validation error in get_player_stats: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error getting player {player_id} stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
         
         if season:
             query = query.filter(GameModel.season_year == season)

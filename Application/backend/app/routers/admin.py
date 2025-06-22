@@ -2,16 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
+import logging
 
 from app.database.database import get_db, SessionLocal
 from app.models.models import DataUpdateStatus, Team  # Import Team
 from app.services.nba_data_service import NBADataService
 from app.services.background_task_manager import BackgroundTaskManager, TaskStatus
+from app.schemas.validation import AdminUpdateSchema, validate_nba_team_id, sanitize_string
 
 router = APIRouter(
     prefix="/admin",
     tags=["admin"]
 )
+
+logger = logging.getLogger(__name__)
 
 # Global task manager instance
 task_manager = BackgroundTaskManager()
@@ -19,50 +23,54 @@ task_manager = BackgroundTaskManager()
 @router.get("/status")
 async def get_admin_status(db: Session = Depends(get_db)):
     """Get detailed status of all data components"""
-    # Refresh the session to ensure we get the latest committed data
-    db.expire_all()
-    
-    status = db.query(DataUpdateStatus).first()
-    if not status:
-        status = DataUpdateStatus(
-            is_updating=False,
-            current_phase=None,
-            last_successful_update=None,
-            next_scheduled_update=None
-        )
-        db.add(status)
-        db.commit()
-    
-    # Get current running task info
-    active_tasks = task_manager.get_active_tasks()
-    task_info = None
-    if active_tasks:
-        # Get the first active task (there should only be one update task at a time)
-        task_info = list(active_tasks.values())[0]
-    
-    return {
-        "last_update": getattr(status, 'last_successful_update'),
-        "next_update": getattr(status, 'next_scheduled_update'),
-        "is_updating": getattr(status, 'is_updating'),
-        "current_phase": getattr(status, 'current_phase'),
-        "last_error": getattr(status, 'last_error'),
-        "last_error_time": getattr(status, 'last_error_time'),
-        "task_info": task_info,
-        "components": {
-            "teams": {
-                "updated": getattr(status, 'teams_updated'),
-                "last_error": getattr(status, 'last_error') if getattr(status, 'current_phase') == "teams" else None
-            },
-            "players": {
-                "updated": getattr(status, 'players_updated'),
-                "last_error": getattr(status, 'last_error') if getattr(status, 'current_phase') == "players" else None
-            },
-            "games": {
-                "updated": getattr(status, 'games_updated'),
-                "last_error": getattr(status, 'last_error') if getattr(status, 'current_phase') == "games" else None
+    try:
+        # Refresh the session to ensure we get the latest committed data
+        db.expire_all()
+        
+        status = db.query(DataUpdateStatus).first()
+        if not status:
+            status = DataUpdateStatus(
+                is_updating=False,
+                current_phase=None,
+                last_successful_update=None,
+                next_scheduled_update=None
+            )
+            db.add(status)
+            db.commit()
+        
+        # Get current running task info
+        active_tasks = task_manager.get_active_tasks()
+        task_info = None
+        if active_tasks:
+            # Get the first active task (there should only be one update task at a time)
+            task_info = list(active_tasks.values())[0]
+        
+        return {
+            "last_update": getattr(status, 'last_successful_update'),
+            "next_update": getattr(status, 'next_scheduled_update'),
+            "is_updating": getattr(status, 'is_updating'),
+            "current_phase": getattr(status, 'current_phase'),
+            "last_error": getattr(status, 'last_error'),
+            "last_error_time": getattr(status, 'last_error_time'),
+            "task_info": task_info,
+            "components": {
+                "teams": {
+                    "updated": getattr(status, 'teams_updated'),
+                    "last_error": getattr(status, 'last_error') if getattr(status, 'current_phase') == "teams" else None
+                },
+                "players": {
+                    "updated": getattr(status, 'players_updated'),
+                    "last_error": getattr(status, 'last_error') if getattr(status, 'current_phase') == "players" else None
+                },
+                "games": {
+                    "updated": getattr(status, 'games_updated'),
+                    "last_error": getattr(status, 'last_error') if getattr(status, 'current_phase') == "games" else None
+                }
             }
         }
-    }
+    except Exception as e:
+        logger.error(f"Error getting admin status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/update/all")
 async def trigger_full_update(db: Session = Depends(get_db)):

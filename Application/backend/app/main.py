@@ -21,6 +21,7 @@ from app.database.init_db import init_db
 from app.services.nba_data_service import NBADataService
 from app.services.scheduler import start_scheduler, stop_scheduler, get_scheduler
 from app.routers import teams, players, games, search, admin
+from app.middleware.validation import ValidationMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -199,6 +200,9 @@ if settings.environment == "production":
 else:
     # Allow localhost for development
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "*"])
+
+# Add validation middleware (first in chain for security)
+app.add_middleware(ValidationMiddleware)
 
 # Add security headers middleware
 @app.middleware("http")
