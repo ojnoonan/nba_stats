@@ -75,6 +75,9 @@ class PlayerGameStatsBase(BaseModel):
     plus_minus: int
     player_name: Optional[str] = None  # Added for stats response
     game_date_utc: Optional[datetime] = None
+    opposition_team_id: Optional[int] = None  # Added for opposition team
+    opposition_team_name: Optional[str] = None  # Added for opposition team name
+    is_home_game: Optional[bool] = None  # Added to indicate if playing at home
 
     class Config:
         from_attributes = True

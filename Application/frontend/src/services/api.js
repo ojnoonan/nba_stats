@@ -97,10 +97,11 @@ export const fetchPlayer = async (playerId) => {
   }
 }
 
-export const fetchPlayerStats = async (playerId, limit = null) => {
+export const fetchPlayerStats = async (playerId, limit = null, season = null) => {
   try {
     const params = new URLSearchParams()
     if (limit) params.append('limit', limit)
+    if (season) params.append('season', season)
     
     const url = `${API_BASE_URL}/players/${playerId}/stats${params.toString() ? `?${params}` : ''}`
     return await fetchWithRetry(url)
@@ -110,12 +111,13 @@ export const fetchPlayerStats = async (playerId, limit = null) => {
   }
 }
 
-export const fetchGames = async (teamId = null, status = null, playerId = null) => {
+export const fetchGames = async (teamId = null, status = null, playerId = null, season = null) => {
   try {
     const params = new URLSearchParams()
     if (teamId) params.append('team_id', teamId)
     if (status) params.append('status', status)
     if (playerId) params.append('player_id', playerId)
+    if (season) params.append('season', season)
     
     const url = `${API_BASE_URL}/games${params.toString() ? `?${params}` : ''}`
     return await fetchWithRetry(url)
@@ -207,9 +209,10 @@ export const cancelAdminUpdate = async () => {
   }
 };
 
-export const searchTeamsAndPlayers = async (term) => {
+export const searchTeamsAndPlayers = async (term, season = null) => {
   try {
     const params = new URLSearchParams({ term })
+    if (season) params.append('season', season)
     return await fetchWithRetry(`${API_BASE_URL}/search?${params}`)
   } catch (error) {
     console.error('Failed to search:', error)
@@ -245,5 +248,42 @@ export const triggerComponentUpdate = async (component) => {
   } catch (error) {
     console.error('Failed to trigger component update:', error)
     throw new Error('Failed to trigger component update')
+  }
+}
+
+export const fetchAvailableSeasons = async () => {
+  try {
+    return await fetchWithRetry(`${API_BASE_URL}/games/seasons`)
+  } catch (error) {
+    console.error('Failed to fetch available seasons:', error)
+    throw new Error('Failed to fetch available seasons')
+  }
+}
+
+export const fetchPlayerLastXGames = async (playerId, count = 5, season = null) => {
+  try {
+    const params = new URLSearchParams()
+    params.append('count', count)
+    if (season) params.append('season', season)
+    
+    const url = `${API_BASE_URL}/players/${playerId}/last_x_games?${params}`
+    return await fetchWithRetry(url)
+  } catch (error) {
+    console.error('Failed to fetch player last X games:', error)
+    throw new Error('Failed to fetch player last X games')
+  }
+}
+
+export const fetchPlayerHighLowGames = async (playerId, count = 5, season = null) => {
+  try {
+    const params = new URLSearchParams()
+    params.append('count', count)
+    if (season) params.append('season', season)
+    
+    const url = `${API_BASE_URL}/players/${playerId}/high_low_games?${params}`
+    return await fetchWithRetry(url)
+  } catch (error) {
+    console.error('Failed to fetch player high/low games:', error)
+    throw new Error('Failed to fetch player high/low games')
   }
 }

@@ -1,0 +1,4 @@
+# MCP Checklist Manager Requirements
+mcp>=1.0.0
+pydantic>=2.0.0
+asyncio-mqtt>=0.16.0

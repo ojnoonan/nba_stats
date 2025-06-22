@@ -58,6 +58,7 @@ class Game(Base):
     status = Column(String, nullable=False)  # 'Upcoming', 'Live', 'Completed'
     season_year = Column(String, nullable=False)
     playoff_round = Column(String)  # Added field for playoff rounds
+    is_loaded = Column(Boolean, nullable=False, default=False)  # Track whether game data has been fully loaded
     last_updated = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

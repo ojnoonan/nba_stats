@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { fetchTeams, fetchStatus, fetchTeam, fetchPlayers, fetchGames, triggerTeamsUpdate } from '../services/api'
 import { LoadingSpinner } from '../components/ui/loading-spinner'
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSeason } from '../components/SeasonContext'
 
 const formatGameTime = (dateStr) => {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -13,7 +14,10 @@ const formatGameTime = (dateStr) => {
 
 const TeamsPage = () => {
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [expandedTeamId, setExpandedTeamId] = useState(null)
+  const { selectedSeason } = useSeason()
+  const expandedContentRef = useRef(null)
 
   const { data: status } = useQuery({
     queryKey: ['status'],
@@ -31,6 +35,49 @@ const TeamsPage = () => {
     queryFn: fetchTeams
   })
 
+  // Get initial expanded team from URL
+  useEffect(() => {
+    const expandParam = searchParams.get('expand')
+    if (expandParam) {
+      const teamId = parseInt(expandParam, 10)
+      if (!isNaN(teamId)) {
+        setExpandedTeamId(teamId)
+      }
+    }
+  }, [searchParams])
+
+  // Auto-scroll to expanded content when team is expanded from URL
+  useEffect(() => {
+    if (expandedTeamId && expandedContentRef.current && teams) {
+      // Small delay to ensure the content is rendered
+      const timeoutId = setTimeout(() => {
+        expandedContentRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        })
+      }, 100)
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [expandedTeamId, teams])
+
+  // Update URL when expanded team changes
+  const updateExpandedTeam = useCallback((teamId) => {
+    const newParams = new URLSearchParams(searchParams)
+    
+    if (teamId === expandedTeamId) {
+      // Collapsing - remove expand parameter
+      newParams.delete('expand')
+      setExpandedTeamId(null)
+    } else {
+      // Expanding - set expand parameter
+      newParams.set('expand', teamId.toString())
+      setExpandedTeamId(teamId)
+    }
+    
+    setSearchParams(newParams, { replace: true })
+  }, [expandedTeamId, searchParams, setSearchParams])
+
   const { data: teamPlayers } = useQuery({
     queryKey: ['players', expandedTeamId],
     queryFn: () => fetchPlayers(expandedTeamId),
@@ -38,13 +85,13 @@ const TeamsPage = () => {
   })
 
   const { data: teamGames } = useQuery({
-    queryKey: ['games', expandedTeamId],
-    queryFn: () => fetchGames(expandedTeamId),
+    queryKey: ['games', expandedTeamId, selectedSeason],
+    queryFn: () => fetchGames(expandedTeamId, null, null, selectedSeason),
     enabled: !!expandedTeamId
   })
 
   const handleTeamClick = (teamId) => {
-    setExpandedTeamId(teamId === expandedTeamId ? null : teamId)
+    updateExpandedTeam(teamId)
   }
 
   const handleRefresh = async () => {
@@ -158,7 +205,10 @@ const TeamsPage = () => {
             </button>
 
             {expandedTeamId === team.team_id && (
-              <div className="mt-4 rounded-lg border bg-card p-6 space-y-6">
+              <div 
+                ref={expandedContentRef}
+                className="mt-4 rounded-lg border bg-card p-6 space-y-6"
+              >
                 {/* Roster Section */}
                 <div>
                   <h3 className="text-xl font-semibold mb-4">Current Roster</h3>
@@ -170,11 +220,11 @@ const TeamsPage = () => {
                         className="flex items-center space-x-3 p-3 rounded-md hover:bg-muted/50 transition-colors"
                       >
                         <img
-                          src={player.headshot_url}
+                          src={player.headshot_url || '/default-player.svg'}
                           alt={player.full_name}
                           className="h-10 w-10 rounded-full object-cover"
                           onError={(e) => {
-                            e.target.src = '/default-player.png'
+                            e.target.src = '/default-player.svg'
                           }}
                         />
                         <div>

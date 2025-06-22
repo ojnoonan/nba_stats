@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import distinct
 from typing import Optional, List
 import logging
 
@@ -15,14 +16,28 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
+@router.get("/seasons")
+async def get_available_seasons(db: Session = Depends(get_db)):
+    """Get all available seasons in the database"""
+    try:
+        seasons = db.query(distinct(GameModel.season_year)).order_by(GameModel.season_year.desc()).all()
+        return [season[0] for season in seasons if season[0]]
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting seasons: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as e:
+        logger.error(f"Error getting seasons: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.get("", response_model=List[GameBase])
 async def get_games(
     team_id: Optional[int] = None,
     status: Optional[str] = None,
     player_id: Optional[int] = None,
+    season: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Get all games, optionally filtered by team, status, or player"""
+    """Get all games, optionally filtered by team, status, player, or season"""
     try:
         query = (db.query(GameModel)
                 .options(
@@ -50,6 +65,9 @@ async def get_games(
                 PlayerGameStats.player_id == player_id
             ).distinct()
             query = query.filter(GameModel.game_id.in_(game_ids))
+        
+        if season:
+            query = query.filter(GameModel.season_year == season)
         
         # If no status filter, use default descending order
         if not status:
@@ -103,7 +121,7 @@ async def get_game_stats(game_id: str, db: Session = Depends(get_db)):
             )
         
         # For upcoming games, return empty stats list
-        if game.status == 'Upcoming':
+        if getattr(game, 'status') == 'Upcoming':
             return []
             
         # Get all player stats for this game with player names

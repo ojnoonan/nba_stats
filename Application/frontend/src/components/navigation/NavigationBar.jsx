@@ -5,13 +5,16 @@ import { fetchStatus } from '../../services/api';
 import { LoadingSpinner } from '../ui/loading-spinner';
 import { SearchBar } from '../ui/search-bar';
 import { Button } from '../ui/button';
+import { useSeason } from '../SeasonContext';
 import { useState, useRef, useEffect } from 'react';
 
 export default function NavigationBar() {
   const { data: status } = useQuery({
     queryKey: ['status'],
     queryFn: fetchStatus,
+    refetchInterval: (data) => (data?.is_updating ? 1000 : 5000), // Refetch every second during updates, every 5 seconds otherwise
   });
+  const { selectedSeason } = useSeason();
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -28,9 +31,33 @@ export default function NavigationBar() {
 
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
-    const date = new Date(dateStr);
+    
+    // Check if the timestamp already has timezone information
+    const hasTimezone = dateStr.includes('Z') || 
+                       dateStr.includes('+') || 
+                       (dateStr.includes('T') && dateStr.includes('-', dateStr.indexOf('T')));
+    
+    // If no timezone info, append 'Z' to treat as UTC
+    const utcDateString = hasTimezone ? dateStr : dateStr + 'Z';
+    
+    const date = new Date(utcDateString);
+    return `${format(date, 'MMM d, yyyy')}`;
+  };
+
+  const formatDateWithTime = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    
+    // Check if the timestamp already has timezone information
+    const hasTimezone = dateStr.includes('Z') || 
+                       dateStr.includes('+') || 
+                       (dateStr.includes('T') && dateStr.includes('-', dateStr.indexOf('T')));
+    
+    // If no timezone info, append 'Z' to treat as UTC
+    const utcDateString = hasTimezone ? dateStr : dateStr + 'Z';
+    
+    const date = new Date(utcDateString);
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return `${format(date, 'MMM d, HH:mm')}`;
+    return `${format(date, 'MMM d, yyyy HH:mm')}`;
   };
 
   const renderStatusMessage = () => {
@@ -42,15 +69,6 @@ export default function NavigationBar() {
         <div className="flex items-center space-x-2 text-primary">
           <LoadingSpinner size="small" />
           <span>Updating {phase}</span>
-        </div>
-      );
-    }
-
-    if (status.last_error) {
-      return (
-        <div className="flex items-center space-x-2 text-destructive">
-          <span>Error</span>
-          <ChevronIcon expanded={showStatusDropdown} />
         </div>
       );
     }
@@ -71,19 +89,12 @@ export default function NavigationBar() {
         <div className="space-y-3">
           <div>
             <div className="text-sm font-medium">Last Update</div>
-            <div className="text-sm text-muted-foreground">{formatDate(status.last_update)} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</div>
+            <div className="text-sm text-muted-foreground">{formatDateWithTime(status.last_update)} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</div>
           </div>
           <div>
             <div className="text-sm font-medium">Next Update</div>
-            <div className="text-sm text-muted-foreground">{formatDate(status.next_update)} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</div>
+            <div className="text-sm text-muted-foreground">{formatDateWithTime(status.next_update)} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</div>
           </div>
-          {status.last_error && (
-            <div>
-              <div className="text-sm font-medium text-destructive">Last Error</div>
-              <div className="text-sm text-destructive">{status.last_error}</div>
-              <div className="text-xs text-muted-foreground">({formatDate(status.last_error_time)})</div>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -91,35 +102,57 @@ export default function NavigationBar() {
 
   return (
     <nav className="sticky top-0 z-50 backdrop-blur-lg border-b border-border/40 bg-background/95">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-6 md:px-8">
         <div className="flex justify-between items-center h-16">
-          <div className="flex items-center space-x-8">
-            <Link to="/" className="text-xl font-bold text-primary">
+          <div className="flex items-center gap-x-8 lg:gap-x-10">
+            <Link to="/" className="text-xl font-bold text-white hover:text-gray-200 transition-colors duration-200">
               NBA Stats
             </Link>
-            <div className="hidden md:flex space-x-4">
-              <Link to="/games" className="nav-link">
-                Games
-              </Link>
-              <Link to="/upcoming-games" className="nav-link">
-                Upcoming Games
-              </Link>
-              <Link to="/teams" className="nav-link">
-                Teams
-              </Link>
-              <Link to="/players" className="nav-link">
-                Players
-              </Link>
+            <div className="hidden md:flex items-stretch flex-nowrap gap-x-2 h-16">
+              <div className="flex items-center px-3 hover:bg-gray-700 transition-colors duration-150 cursor-pointer">
+                <Link 
+                  to="/games" 
+                  className="text-sm text-white whitespace-nowrap"
+                >
+                  Games
+                </Link>
+              </div>
+              <div className="flex items-center px-3 hover:bg-gray-700 transition-colors duration-150 cursor-pointer">
+                <Link 
+                  to="/upcoming-games" 
+                  className="text-sm text-white whitespace-nowrap"
+                >
+                  Upcoming Games
+                </Link>
+              </div>
+              <div className="flex items-center px-3 hover:bg-gray-700 transition-colors duration-150 cursor-pointer">
+                <Link 
+                  to="/teams" 
+                  className="text-sm text-white whitespace-nowrap"
+                >
+                  Teams
+                </Link>
+              </div>
+              <div className="flex items-center px-3 hover:bg-gray-700 transition-colors duration-150 cursor-pointer">
+                <Link 
+                  to="/players" 
+                  className="text-sm text-white whitespace-nowrap"
+                >
+                  Players
+                </Link>
+              </div>
             </div>
           </div>
 
-          <div className="hidden md:flex items-center space-x-4">
-            <SearchBar />
-            <div className="relative" ref={dropdownRef}>
+          <div className="hidden md:flex items-center gap-x-4 h-16">
+            <div className="flex items-center h-16">
+              <SearchBar />
+            </div>
+            <div className="relative flex items-center h-16" ref={dropdownRef}>
               <Button
                 variant="ghost"
                 size="sm"
-                className="relative"
+                className="relative h-10 text-white hover:text-gray-300 bg-transparent hover:bg-gray-700 rounded-md px-2 py-2 transition-colors duration-150"
                 onClick={() => !status?.is_updating && setShowStatusDropdown(!showStatusDropdown)}
                 disabled={status?.is_updating}
               >

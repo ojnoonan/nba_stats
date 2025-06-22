@@ -12,11 +12,13 @@ import {
   useReactTable,
 } from '@tanstack/react-table'
 import { useState } from 'react'
+import { useSeason } from '../components/SeasonContext'
 
 const PlayersPage = () => {
   const queryClient = useQueryClient()
   const { id } = useParams()
   const [sorting, setSorting] = useState([])
+  const { selectedSeason } = useSeason()
 
   const { data: status } = useQuery({
     queryKey: ['status'],
@@ -29,12 +31,12 @@ const PlayersPage = () => {
   })
 
   const { data: playerStats, isLoading: statsLoading } = useQuery({
-    queryKey: ['playerStats', id],
-    queryFn: () => fetchPlayerStats(id),
+    queryKey: ['playerStats', id, selectedSeason],
+    queryFn: () => fetchPlayerStats(id, selectedSeason),
     enabled: !!id
   })
 
-  const { data: teams } = useQuery({
+  const { data: teams, isLoading: teamsLoading, error: teamsError } = useQuery({
     queryKey: ['teams'],
     queryFn: fetchTeams
   })
@@ -60,8 +62,39 @@ const PlayersPage = () => {
   const columns = [
     columnHelper.accessor('game_date_utc', {
       header: 'Date',
-      cell: info => info.getValue() ? format(new Date(info.getValue()), 'MMM d, yyyy') : 'N/A',
+      cell: info => (
+        <div className="text-left">
+          {info.getValue() ? format(new Date(info.getValue()), 'MMM d, yyyy') : 'N/A'}
+        </div>
+      ),
       sortingFn: 'datetime'
+    }),
+    columnHelper.accessor(row => ({
+      teamName: row.opposition_team_name,
+      teamId: row.opposition_team_id,
+      isHome: row.is_home_game
+    }), {
+      id: 'opposition',
+      header: 'Opponent',
+      cell: info => {
+        const val = info.getValue()
+        if (!val || !val.teamName) return '-'
+        
+        return (
+          <div className="text-left">
+            {val.teamId ? (
+              <Link 
+                to={`/teams?expand=${val.teamId}`}
+                className="text-primary hover:underline"
+              >
+                {val.teamName}
+              </Link>
+            ) : (
+              val.teamName
+            )}
+          </div>
+        )
+      }
     }),
     columnHelper.accessor('minutes', {
       header: () => (
@@ -182,7 +215,15 @@ const PlayersPage = () => {
       cell: info => {
         const val = info.getValue()
         if (val === null || val === undefined) return '-'
-        return val > 0 ? `+${val}` : val
+        
+        const displayValue = val > 0 ? `+${val}` : val
+        const colorClass = val > 0 ? 'text-green-500' : val < 0 ? 'text-red-500' : ''
+        
+        return (
+          <span className={colorClass}>
+            {displayValue}
+          </span>
+        )
       },
       sortingFn: 'number'
     })
@@ -199,6 +240,7 @@ const PlayersPage = () => {
     getSortedRowModel: getSortedRowModel(),
   })
 
+  // Only show loading spinner if players are loading, not teams
   if (playersLoading || (!players?.length && !id) || (id && !players)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
@@ -214,12 +256,15 @@ const PlayersPage = () => {
     )
   }
 
+  // Only show error page if players fail to load, not teams
   if (playersError) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
         <p className="text-destructive">Error loading players: {playersError.message}</p>
         <button
-          onClick={() => queryClient.invalidateQueries({ queryKey: ['players'] })}
+          onClick={() => {
+            queryClient.invalidateQueries({ queryKey: ['players'] })
+          }}
           className="text-primary hover:underline"
         >
           Try again
@@ -259,10 +304,8 @@ const PlayersPage = () => {
 
     const averages = calculateAverages(playerStats)
 
-    const today = new Date()
-    const season = today.getMonth() < 8 ? 
-      `${today.getFullYear()-1}-${today.getFullYear()}` : 
-      `${today.getFullYear()}-${today.getFullYear()+1}`
+    // Use selected season from context instead of calculating current season
+    const season = selectedSeason || 'Current Season'
 
     return (
       <TooltipWrapper>
@@ -274,11 +317,11 @@ const PlayersPage = () => {
             <div className="flex flex-col md:flex-row items-center md:items-start space-y-6 md:space-y-0 md:space-x-8">
               <div className="h-48 w-48 flex-shrink-0 relative">
                 <img
-                  src={player.headshot_url}
+                  src={player.headshot_url || '/default-player.svg'}
                   alt={player.full_name}
                   className="h-full w-full object-cover rounded-full"
                   onError={(e) => {
-                    e.target.src = '/default-player.png'
+                    e.target.src = '/default-player.svg'
                   }}
                 />
                 {player.traded_date && player.previous_team_id && player.previous_team_id !== player.current_team_id && (
@@ -404,16 +447,36 @@ const PlayersPage = () => {
     )
   }
 
-  const today = new Date()
-
   const groupPlayersByTeam = () => {
     const grouped = {}
     
-    grouped['Free Agents'] = players?.filter(player => !player.current_team_id) || []
+    if (!players?.length) {
+      return grouped
+    }
     
-    teams?.forEach(team => {
-      grouped[team.name] = players?.filter(player => player.current_team_id === team.team_id) || []
-    })
+    // Group by teams first if teams data is available
+    if (teams?.length > 0) {
+      // Sort teams alphabetically for consistent display order
+      const sortedTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name))
+      sortedTeams.forEach(team => {
+        const teamPlayers = players.filter(player => player.current_team_id === team.team_id)
+        if (teamPlayers.length > 0) {
+          grouped[team.name] = teamPlayers
+        }
+      })
+    } else if (!teamsLoading) {
+      // If teams failed to load, show all players with team IDs as "Unknown Team"
+      const playersWithTeams = players.filter(player => player.current_team_id)
+      if (playersWithTeams.length > 0) {
+        grouped['Players (Team info unavailable)'] = playersWithTeams
+      }
+    }
+    
+    // Add free agents at the end
+    const freeAgents = players.filter(player => !player.current_team_id)
+    if (freeAgents.length > 0) {
+      grouped['Free Agents'] = freeAgents
+    }
 
     return grouped
   }
@@ -426,10 +489,7 @@ const PlayersPage = () => {
         <div>
           <h1 className="text-3xl font-bold">NBA Players</h1>
           <p className="text-muted-foreground mt-1">
-            {today.getMonth() < 8 ? 
-              `${today.getFullYear()-1}-${today.getFullYear()}` : 
-              `${today.getFullYear()}-${today.getFullYear()+1}`
-            } Season
+            {selectedSeason || 'Current Season'} Season
           </p>
         </div>
         <div className="flex items-center space-x-4">
@@ -464,10 +524,24 @@ const PlayersPage = () => {
       </div>
 
       <div className="space-y-8">
+        {teamsLoading && (
+          <div className="text-center py-4">
+            <div className="flex items-center justify-center space-x-2 text-muted-foreground">
+              <LoadingSpinner size="small" />
+              <span>Loading team information...</span>
+            </div>
+          </div>
+        )}
+        {teamsError && (
+          <div className="text-center py-4">
+            <p className="text-destructive">Error loading teams: {teamsError.message}</p>
+            <p className="text-sm text-muted-foreground mt-1">Players will be shown without team grouping</p>
+          </div>
+        )}
         {Object.entries(groupedPlayers).map(([teamName, teamPlayers]) => (
           teamPlayers.length > 0 && (
             <div key={teamName} className="space-y-4">
-              <h2 className="text-2xl font-semibold border-b pb-2">{teamName}</h2>
+              <h2 className="text-2xl font-semibold border-b pb-2">{teamName} ({teamPlayers.length} players)</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {teamPlayers.map((player) => (
                   <Link
@@ -478,11 +552,11 @@ const PlayersPage = () => {
                     <div className="flex items-center space-x-4">
                       <div className="h-20 w-20 flex-shrink-0">
                         <img
-                          src={player.headshot_url}
+                          src={player.headshot_url || '/default-player.svg'}
                           alt={player.full_name}
                           className="h-full w-full object-cover rounded-full"
                           onError={(e) => {
-                            e.target.src = '/default-player.png'
+                            e.target.src = '/default-player.svg'
                           }}
                         />
                       </div>
@@ -513,6 +587,14 @@ const PlayersPage = () => {
             </div>
           )
         ))}
+        {Object.keys(groupedPlayers).length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">No players found or still loading...</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Players: {players?.length || 0}, Teams: {teams?.length || 0}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

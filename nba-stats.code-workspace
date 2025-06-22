@@ -1,0 +1,94 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "python.pythonPath": "python3",
+    "python.terminal.activateEnvironment": true,
+    "files.associations": {
+      "*.md": "markdown"
+    },
+    "markdown.preview.scrollEditorWithPreview": true,
+    "markdown.preview.scrollPreviewWithEditor": true,
+    "editor.rulers": [80, 120],
+    "editor.wordWrap": "on",
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/*.pyc": true,
+      "**/.pytest_cache": true
+    }
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Checklist: Show Status",
+        "type": "shell",
+        "command": "python3",
+        "args": ["ai_checklist.py", "status"],
+        "group": "build",
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": false,
+          "panel": "shared"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Checklist: High Priority Items",
+        "type": "shell",
+        "command": "python3",
+        "args": ["app/mcp/checklist_cli.py", "list", "--high-priority"],
+        "group": "build",
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": false,
+          "panel": "shared"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Checklist: Ready Items",
+        "type": "shell",
+        "command": "python3",
+        "args": ["app/mcp/checklist_cli.py", "list", "--ready"],
+        "group": "build",
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": false,
+          "panel": "shared"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Checklist: Interactive Update",
+        "type": "shell",
+        "command": "python3",
+        "args": ["ai_checklist.py"],
+        "group": "build",
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": true,
+          "panel": "shared"
+        },
+        "problemMatcher": []
+      }
+    ]
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.pylint",
+      "ms-python.black-formatter",
+      "charliermarsh.ruff",
+      "yzhang.markdown-all-in-one",
+      "davidanson.vscode-markdownlint"
+    ]
+  }
+}

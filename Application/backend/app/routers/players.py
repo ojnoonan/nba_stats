@@ -49,9 +49,10 @@ async def get_player(player_id: int, db: Session = Depends(get_db)):
 @router.get("/{player_id}/stats")
 async def get_player_stats(
     player_id: int,
+    season: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Get all game statistics for a player"""
+    """Get all game statistics for a player, optionally filtered by season"""
     try:
         # First verify player exists
         player = db.query(PlayerModel).filter(PlayerModel.player_id == player_id).first()
@@ -59,17 +60,42 @@ async def get_player_stats(
             raise HTTPException(status_code=404, detail="Player not found")
             
         # Get all stats with game info
-        stats = (db.query(PlayerGameStats, GameModel)
+        from app.models.models import Team
+        query = (db.query(PlayerGameStats, GameModel)
                 .join(GameModel, PlayerGameStats.game_id == GameModel.game_id)
-                .filter(PlayerGameStats.player_id == player_id)
-                .order_by(GameModel.game_date_utc.desc())
-                .all())
+                .filter(PlayerGameStats.player_id == player_id))
+        
+        if season:
+            query = query.filter(GameModel.season_year == season)
+            
+        stats_with_games = query.order_by(GameModel.game_date_utc.desc()).all()
+        
+        # Get team names for opposition calculation
+        team_query = db.query(Team).all()
+        teams_dict = {team.team_id: team.name for team in team_query}
                 
-        # Return stats with game dates
+        # Return stats with game dates and opposition team
         result = []
-        for stat, game in stats:
-            stat_dict = stat.__dict__
+        for stat, game in stats_with_games:
+            stat_dict = stat.__dict__.copy()
             stat_dict['game_date_utc'] = game.game_date_utc
+            
+            # Determine opposition team
+            if stat.team_id == game.home_team_id:
+                # Player was on home team, opposition is away team
+                stat_dict['opposition_team_id'] = game.away_team_id
+                stat_dict['opposition_team_name'] = teams_dict.get(game.away_team_id, 'Unknown')
+                stat_dict['is_home_game'] = True
+            else:
+                # Player was on away team, opposition is home team
+                stat_dict['opposition_team_id'] = game.home_team_id
+                stat_dict['opposition_team_name'] = teams_dict.get(game.home_team_id, 'Unknown')
+                stat_dict['is_home_game'] = False
+                
+            # Remove SQLAlchemy internal attributes
+            if '_sa_instance_state' in stat_dict:
+                del stat_dict['_sa_instance_state']
+                
             result.append(stat_dict)
         return result
     except HTTPException as he:
@@ -82,9 +108,10 @@ async def get_player_stats(
 async def get_player_last_x_games(
     player_id: int,
     count: int = Query(5, ge=1, le=20),
+    season: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Get aggregated stats for player's last N games"""
+    """Get aggregated stats for player's last N games, optionally filtered by season"""
     try:
         # First verify player exists
         player = db.query(PlayerModel).filter(PlayerModel.player_id == player_id).first()
@@ -92,10 +119,14 @@ async def get_player_last_x_games(
             raise HTTPException(status_code=404, detail="Player not found")
         
         # Get the last N games' stats
-        recent_stats = (db.query(PlayerGameStats)
+        query = (db.query(PlayerGameStats)
                        .join(GameModel, PlayerGameStats.game_id == GameModel.game_id)
-                       .filter(PlayerGameStats.player_id == player_id)
-                       .order_by(GameModel.game_date_utc.desc())
+                       .filter(PlayerGameStats.player_id == player_id))
+        
+        if season:
+            query = query.filter(GameModel.season_year == season)
+            
+        recent_stats = (query.order_by(GameModel.game_date_utc.desc())
                        .limit(count)
                        .all())
         
@@ -131,27 +162,32 @@ async def get_player_last_x_games(
 async def get_player_high_low_games(
     player_id: int,
     count: int = Query(5, ge=1, le=20),
+    season: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Get player's highest and lowest scoring games"""
+    """Get player's highest and lowest scoring games, optionally filtered by season"""
     try:
         # First verify player exists
         player = db.query(PlayerModel).filter(PlayerModel.player_id == player_id).first()
         if not player:
             raise HTTPException(status_code=404, detail="Player not found")
         
-        # Get highest scoring games
-        high_games = (db.query(PlayerGameStats, GameModel)
+        # Base query
+        base_query = (db.query(PlayerGameStats, GameModel)
                      .join(GameModel, PlayerGameStats.game_id == GameModel.game_id)
-                     .filter(PlayerGameStats.player_id == player_id)
+                     .filter(PlayerGameStats.player_id == player_id))
+        
+        if season:
+            base_query = base_query.filter(GameModel.season_year == season)
+        
+        # Get highest scoring games
+        high_games = (base_query
                      .order_by(desc(PlayerGameStats.points))
                      .limit(count)
                      .all())
                      
         # Get lowest scoring games
-        low_games = (db.query(PlayerGameStats, GameModel)
-                    .join(GameModel, PlayerGameStats.game_id == GameModel.game_id)
-                    .filter(PlayerGameStats.player_id == player_id)
+        low_games = (base_query
                     .order_by(PlayerGameStats.points)
                     .limit(count)
                     .all())

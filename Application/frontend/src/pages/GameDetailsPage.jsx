@@ -78,6 +78,98 @@ export default function GameDetailsPage() {
   const allStats = stats || []
   const filteredStats = hideDNP ? allStats.filter(stat => stat.minutes !== '0:00') : allStats
 
+  // Separate stats by team
+  const homeTeamStats = filteredStats.filter(stat => stat.team_id === game?.home_team_id)
+  const awayTeamStats = filteredStats.filter(stat => stat.team_id === game?.away_team_id)
+
+  const renderStatsTable = (teamStats, teamName) => (
+    <div className="mb-8">
+      <h3 className="text-xl font-semibold mb-4 flex items-center space-x-3">
+        <span>{teamName}</span>
+      </h3>
+      <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="p-3 text-left font-semibold">Player</th>
+              <th 
+                className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
+                onClick={() => handleSort('minutes')}
+              >
+                MIN
+              </th>
+              <th 
+                className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
+                onClick={() => handleSort('points')}
+              >
+                PTS
+              </th>
+              <th 
+                className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
+                onClick={() => handleSort('rebounds')}
+              >
+                REB
+              </th>
+              <th 
+                className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
+                onClick={() => handleSort('assists')}
+              >
+                AST
+              </th>
+              <th 
+                className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
+                onClick={() => handleSort('steals')}
+              >
+                STL
+              </th>
+              <th 
+                className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
+                onClick={() => handleSort('blocks')}
+              >
+                BLK
+              </th>
+              <th className="p-3 text-right font-semibold">FG</th>
+              <th className="p-3 text-right font-semibold">3P</th>
+              <th className="p-3 text-right font-semibold">FT</th>
+              <th 
+                className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
+                onClick={() => handleSort('plus_minus')}
+              >
+                +/-
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortStats(teamStats).map((stat) => (
+              <tr key={stat.stat_id} className="border-b last:border-0 hover:bg-muted/50">
+                <td className="p-3">
+                  <Link 
+                    to={`/players/${stat.player_id}`}
+                    className="text-primary hover:underline"
+                  >
+                    {stat.player_name}
+                  </Link>
+                </td>
+                <td className="p-3 text-right">{stat.minutes}</td>
+                <td className="p-3 text-right">{stat.points}</td>
+                <td className="p-3 text-right">{stat.rebounds}</td>
+                <td className="p-3 text-right">{stat.assists}</td>
+                <td className="p-3 text-right">{stat.steals}</td>
+                <td className="p-3 text-right">{stat.blocks}</td>
+                <td className="p-3 text-right">{stat.fgm}/{stat.fga}</td>
+                <td className="p-3 text-right">{stat.tpm}/{stat.tpa}</td>
+                <td className="p-3 text-right">{stat.ftm}/{stat.fta}</td>
+                <td className={`p-3 text-right ${stat.plus_minus > 0 ? 'text-green-500' : stat.plus_minus < 0 ? 'text-red-500' : ''}`}>
+                  {stat.plus_minus > 0 ? '+' : ''}{stat.plus_minus}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center space-x-4 mb-8">
@@ -139,6 +231,7 @@ export default function GameDetailsPage() {
         <>
           {/* Box Score Controls */}
           <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-2xl font-semibold">Box Score</h2>
             <label className="flex items-center space-x-2">
               <input
                 type="checkbox"
@@ -150,80 +243,11 @@ export default function GameDetailsPage() {
             </label>
           </div>
 
-          {/* Box Score Table */}
-          <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="p-3 text-left font-semibold">Player</th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('minutes')}
-                  >
-                    MIN
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('points')}
-                  >
-                    PTS
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('rebounds')}
-                  >
-                    REB
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('assists')}
-                  >
-                    AST
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('steals')}
-                  >
-                    STL
-                  </th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('blocks')}
-                  >
-                    BLK
-                  </th>
-                  <th className="p-3 text-right font-semibold">FG</th>
-                  <th className="p-3 text-right font-semibold">3P</th>
-                  <th className="p-3 text-right font-semibold">FT</th>
-                  <th 
-                    className="cursor-pointer p-3 text-right font-semibold hover:text-primary"
-                    onClick={() => handleSort('plus_minus')}
-                  >
-                    +/-
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortStats(filteredStats).map((stat) => (
-                  <tr key={stat.stat_id} className="border-b last:border-0 hover:bg-muted/50">
-                    <td className="p-3">{stat.player_name}</td>
-                    <td className="p-3 text-right">{stat.minutes}</td>
-                    <td className="p-3 text-right">{stat.points}</td>
-                    <td className="p-3 text-right">{stat.rebounds}</td>
-                    <td className="p-3 text-right">{stat.assists}</td>
-                    <td className="p-3 text-right">{stat.steals}</td>
-                    <td className="p-3 text-right">{stat.blocks}</td>
-                    <td className="p-3 text-right">{stat.fgm}/{stat.fga}</td>
-                    <td className="p-3 text-right">{stat.tpm}/{stat.tpa}</td>
-                    <td className="p-3 text-right">{stat.ftm}/{stat.fta}</td>
-                    <td className={`p-3 text-right ${stat.plus_minus > 0 ? 'text-green-500' : stat.plus_minus < 0 ? 'text-red-500' : ''}`}>
-                      {stat.plus_minus > 0 ? '+' : ''}{stat.plus_minus}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Away Team Stats */}
+          {renderStatsTable(awayTeamStats, game.away_team?.name)}
+
+          {/* Home Team Stats */}
+          {renderStatsTable(homeTeamStats, game.home_team?.name)}
         </>
       )}
     </div>

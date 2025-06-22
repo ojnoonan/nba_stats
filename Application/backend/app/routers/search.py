@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import logging
+from typing import Optional
 
-from app.models.models import Team, Player
+from app.models.models import Team, Player, PlayerGameStats, Game
 from app.database.database import get_db
 
 router = APIRouter(
@@ -16,9 +17,10 @@ logger = logging.getLogger(__name__)
 @router.get("")
 async def search(
     term: str = Query(..., min_length=2),
+    season: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Search for teams and players matching the query term"""
+    """Search for teams and players matching the query term, optionally filtered by season"""
     try:
         # Get all teams that match the search term
         teams = db.query(Team).filter(
@@ -29,13 +31,24 @@ async def search(
         ).all()
 
         # Get all players that match the search term
-        players = db.query(Player).filter(
+        player_query = db.query(Player).filter(
             or_(
                 Player.full_name.ilike(f"%{term}%"),
                 Player.first_name.ilike(f"%{term}%"),
                 Player.last_name.ilike(f"%{term}%")
             )
-        ).all()
+        )
+        
+        # If season is specified, filter players who played in that season
+        if season:
+            # Get player IDs who have game stats in the specified season
+            player_ids_in_season = db.query(PlayerGameStats.player_id).join(
+                Game, PlayerGameStats.game_id == Game.game_id
+            ).filter(Game.season_year == season).distinct()
+            
+            player_query = player_query.filter(Player.player_id.in_(player_ids_in_season))
+        
+        players = player_query.all()
 
         # Group players by team
         results = []

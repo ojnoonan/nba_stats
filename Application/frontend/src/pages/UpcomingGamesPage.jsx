@@ -4,9 +4,11 @@ import { format } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { fetchGames, fetchTeams, fetchStatus, triggerGamesUpdate } from '../services/api'
 import { LoadingSpinner } from '../components/ui/loading-spinner'
+import { useSeason } from '../components/SeasonContext'
 
 const UpcomingGamesPage = () => {
   const queryClient = useQueryClient()
+  const { selectedSeason } = useSeason()
 
   const { data: status } = useQuery({
     queryKey: ['status'],
@@ -20,8 +22,8 @@ const UpcomingGamesPage = () => {
     refetch: refetchGames,
     isFetching: isRefetching
   } = useQuery({
-    queryKey: ['games', 'upcoming'],
-    queryFn: () => fetchGames(null, 'Upcoming')
+    queryKey: ['games', 'upcoming', selectedSeason],
+    queryFn: () => fetchGames(null, 'Upcoming', null, selectedSeason)
   })
 
   const { data: teams } = useQuery({
@@ -122,7 +124,7 @@ const UpcomingGamesPage = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Upcoming Games</h1>
-          <p className="text-muted-foreground mt-1">2024-25 NBA Playoffs</p>
+          <p className="text-muted-foreground mt-1">{selectedSeason || 'Current Season'}</p>
         </div>
         <div className="flex items-center space-x-4">
           {status?.is_updating && status.current_phase === 'games' && (

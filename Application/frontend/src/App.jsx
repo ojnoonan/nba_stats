@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { LoadingSpinner } from './components/ui/loading-spinner'
 import { Layout } from './components/layout/Layout'
+import { SeasonProvider } from './components/SeasonContext'
 import HomePage from './pages/HomePage'
 import TeamsPage from './pages/TeamsPage'
 import PlayersPage from './pages/PlayersPage'
@@ -19,21 +20,24 @@ const SuspenseFallback = () => (
 
 function App() {
   return (
-    <Router>
-      <Layout>
-        <Suspense fallback={<SuspenseFallback />}>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/teams" element={<TeamsPage />} />
-            <Route path="/players" element={<PlayersPage />} />
-            <Route path="/games" element={<GamesPage />} />
-            <Route path="/upcoming-games" element={<UpcomingGamesPage />} />
-            <Route path="/games/:id" element={<GameDetailsPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-          </Routes>
-        </Suspense>
-      </Layout>
-    </Router>
+    <SeasonProvider>
+      <Router>
+        <Layout>
+          <Suspense fallback={<SuspenseFallback />}>
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/teams" element={<TeamsPage />} />
+              <Route path="/players" element={<PlayersPage />} />
+              <Route path="/players/:id" element={<PlayersPage />} />
+              <Route path="/games" element={<GamesPage />} />
+              <Route path="/upcoming-games" element={<UpcomingGamesPage />} />
+              <Route path="/games/:id" element={<GameDetailsPage />} />
+              <Route path="/admin" element={<AdminPage />} />
+            </Routes>
+          </Suspense>
+        </Layout>
+      </Router>
+    </SeasonProvider>
   )
 }
 

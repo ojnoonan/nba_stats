@@ -4,9 +4,11 @@ import { format } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { fetchGames, fetchTeams, fetchStatus, triggerGamesUpdate } from '../services/api'
 import { LoadingSpinner } from '../components/ui/loading-spinner'
+import { useSeason } from '../components/SeasonContext'
 
 const GamesPage = () => {
   const queryClient = useQueryClient()
+  const { selectedSeason } = useSeason()
 
   const { data: status } = useQuery({
     queryKey: ['status'],
@@ -20,8 +22,8 @@ const GamesPage = () => {
     refetch: refetchGames,
     isFetching: isRefetching
   } = useQuery({
-    queryKey: ['games'],
-    queryFn: () => fetchGames()
+    queryKey: ['games', selectedSeason],
+    queryFn: () => fetchGames(null, null, null, selectedSeason)
   })
 
   const { data: teams } = useQuery({

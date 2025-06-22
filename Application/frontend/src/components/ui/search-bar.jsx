@@ -3,12 +3,14 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { searchTeamsAndPlayers } from '../../services/api'
 import { LoadingSpinner } from './loading-spinner'
+import { useSeason } from '../SeasonContext'
 
 export function SearchBar() {
   const [term, setTerm] = useState('')
   const [debouncedTerm, setDebouncedTerm] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const searchRef = useRef(null)
+  const { selectedSeason } = useSeason()
 
   // Handle clicks outside search results to close dropdown
   useEffect(() => {
@@ -29,10 +31,10 @@ export function SearchBar() {
     return () => clearTimeout(timer)
   }, [term])
 
-  // Search query
+  // Search query with season filtering
   const { data: searchResults, isLoading } = useQuery({
-    queryKey: ['search', debouncedTerm],
-    queryFn: () => searchTeamsAndPlayers(debouncedTerm),
+    queryKey: ['search', debouncedTerm, selectedSeason],
+    queryFn: () => searchTeamsAndPlayers(debouncedTerm, selectedSeason),
     enabled: debouncedTerm.length >= 2,
     staleTime: 30000 // Cache results for 30 seconds
   })
@@ -54,7 +56,7 @@ export function SearchBar() {
           value={term}
           onChange={handleInputChange}
           placeholder="Search teams and players..."
-          className="w-full rounded-lg border px-3 py-2 pr-8 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+          className="w-full h-10 rounded-lg border border-border px-3 pr-8 text-sm bg-transparent text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent hover:border-gray-300 transition-colors duration-200"
         />
         {debouncedTerm.length >= 2 && isLoading && (
           <div className="absolute right-2 top-1/2 -translate-y-1/2">

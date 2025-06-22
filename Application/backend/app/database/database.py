@@ -4,11 +4,19 @@ from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager, asynccontextmanager
 import os
 
-# Use environment variable with fallback for data directory
-DATA_DIR = os.getenv('NBA_STATS_DATA_DIR', '/app/data')
-os.makedirs(DATA_DIR, exist_ok=True)
+# Import settings after the core module is available
+try:
+    from app.core.config import settings
+    # Use settings for database configuration
+    DATA_DIR = settings.nba_stats_data_dir
+    SQLALCHEMY_DATABASE_URL = settings.database_url
+except ImportError:
+    # Fallback for when settings aren't available (e.g., during initial setup)
+    DATA_DIR = os.getenv('NBA_STATS_DATA_DIR', os.path.join(os.path.dirname(os.path.dirname(__file__)), '..'))
+    SQLALCHEMY_DATABASE_URL = os.getenv('DATABASE_URL', f"sqlite:///{DATA_DIR}/nba_stats.db")
 
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/nba_stats.db"
+# Ensure data directory exists
+os.makedirs(os.path.dirname(SQLALCHEMY_DATABASE_URL.replace('sqlite:///', '')), exist_ok=True)
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}

@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
 import logging
 
+from app.core.config import settings
+from app.schemas.validation import TeamIdSchema
 from app.models.models import Team as TeamModel, DataUpdateStatus
 from app.database.database import get_db, get_async_db
 from app.services.nba_data_service import NBADataService
