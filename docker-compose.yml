@@ -16,6 +16,13 @@ services:
       - "7778"
     volumes:
       - nba_data:/app/data
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./nba_stats.db}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    env_file:
+      - ./Application/backend/.env
     networks:
       - nba_network
     healthcheck:
