@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import distinct
@@ -8,6 +8,7 @@ import logging
 from app.models.models import Game as GameModel, PlayerGameStats, Player as PlayerModel
 from app.schemas.schemas import GameBase, PlayerGameStatsBase
 from app.database.database import get_db
+from app.core.exceptions import ErrorHandler, NotFoundError, DatabaseError
 
 router = APIRouter(
     prefix="/games",
@@ -22,12 +23,8 @@ async def get_available_seasons(db: Session = Depends(get_db)):
     try:
         seasons = db.query(distinct(GameModel.season_year)).order_by(GameModel.season_year.desc()).all()
         return [season[0] for season in seasons if season[0]]
-    except SQLAlchemyError as e:
-        logger.error(f"Database error getting seasons: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
     except Exception as e:
-        logger.error(f"Error getting seasons: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise ErrorHandler.handle_error(e, "get available seasons")
 
 @router.get("", response_model=List[GameBase])
 async def get_games(
@@ -76,12 +73,8 @@ async def get_games(
         games = query.all()
         return games
         
-    except SQLAlchemyError as e:
-        logger.error(f"Database error getting games: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
     except Exception as e:
-        logger.error(f"Error getting games: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise ErrorHandler.handle_error(e, "get games")
 
 @router.get("/{game_id}", response_model=GameBase)
 async def get_game(game_id: str, db: Session = Depends(get_db)):
@@ -95,18 +88,10 @@ async def get_game(game_id: str, db: Session = Depends(get_db)):
                 .filter(GameModel.game_id == game_id)
                 .first())
         if game is None:
-            raise HTTPException(status_code=404, detail="Game not found")
+            raise NotFoundError("Game", game_id)
         return game
-    except SQLAlchemyError as e:
-        logger.error(f"Database error getting game {game_id}: {str(e)}")
-        # Rollback session if needed
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
-    except HTTPException as he:
-        raise he
     except Exception as e:
-        logger.error(f"Error getting game {game_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise ErrorHandler.handle_error(e, f"get game {game_id}")
 
 @router.get("/{game_id}/stats", response_model=List[PlayerGameStatsBase])
 async def get_game_stats(game_id: str, db: Session = Depends(get_db)):
@@ -115,10 +100,7 @@ async def get_game_stats(game_id: str, db: Session = Depends(get_db)):
         # First verify the game exists
         game = db.query(GameModel).filter(GameModel.game_id == game_id).first()
         if not game:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Game {game_id} not found"
-            )
+            raise NotFoundError("Game", game_id)
         
         # For upcoming games, return empty stats list
         if getattr(game, 'status') == 'Upcoming':
@@ -162,18 +144,5 @@ async def get_game_stats(game_id: str, db: Session = Depends(get_db)):
                 
         return result
         
-    except HTTPException as he:
-        raise he
-    except SQLAlchemyError as e:
-        logger.error(f"Database error getting game stats for {game_id}: {str(e)}")
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Database error: {str(e)}"
-        )
     except Exception as e:
-        logger.error(f"Error getting game stats for {game_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise ErrorHandler.handle_error(e, f"get game stats for {game_id}")

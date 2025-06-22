@@ -3,9 +3,11 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
+from sqlalchemy.exc import SQLAlchemyError
 from typing import Optional
 from app.models.models import Player as PlayerModel, PlayerGameStats, Game as GameModel
 from app.database.database import get_db
+from app.core.exceptions import ErrorHandler, NotFoundError, ValidationException
 from app.schemas.validation import PlayerIdSchema, PlayerQuerySchema, PaginationSchema, validate_nba_player_id, validate_nba_team_id
 
 router = APIRouter(
@@ -69,16 +71,14 @@ async def get_player(player_id: int, db: Session = Depends(get_db)):
         
         player = db.query(PlayerModel).filter(PlayerModel.player_id == player_id).first()
         if player is None:
-            raise HTTPException(status_code=404, detail="Player not found")
+            raise NotFoundError("Player", str(player_id))
         return player
-    except ValueError as ve:
-        logger.warning(f"Validation error in get_player: {str(ve)}")
-        raise HTTPException(status_code=400, detail=str(ve))
-    except HTTPException as he:
-        raise he
+    except (ValueError, ValidationException) as e:
+        raise ErrorHandler.handle_error(e, f"validating player ID {player_id}")
+    except SQLAlchemyError as e:
+        raise ErrorHandler.handle_error(e, f"fetching player {player_id}")
     except Exception as e:
-        logger.error(f"Error getting player {player_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise ErrorHandler.handle_error(e, f"fetching player {player_id}")
 
 @router.get("/{player_id}/stats")
 async def get_player_stats(

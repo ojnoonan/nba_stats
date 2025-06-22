@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import logging
@@ -7,6 +7,7 @@ from typing import Optional
 from app.models.models import Team, Player, PlayerGameStats, Game
 from app.database.database import get_db
 from app.schemas.validation import SearchQuerySchema, SeasonSchema, sanitize_string
+from app.core.exceptions import ErrorHandler, ValidationException
 
 router = APIRouter(
     prefix="/search",
@@ -27,14 +28,14 @@ async def search(
         # Sanitize and validate search term
         term = sanitize_string(term)
         if len(term.strip()) < 2:
-            raise ValueError("Search term must be at least 2 characters after sanitization")
+            raise ValidationException("Search term must be at least 2 characters after sanitization")
         
         # Validate season if provided
         if season:
             season = sanitize_string(season)
             import re
             if not re.match(r'^\d{4}-\d{2}$', season):
-                raise ValueError("Season must be in YYYY-YY format")
+                raise ValidationException("Season must be in YYYY-YY format")
         
         # Limit term length to prevent performance issues
         if len(term) > 100:
@@ -87,56 +88,5 @@ async def search(
             "total": len(teams) + len(players)
         }
         
-    except ValueError as ve:
-        logger.warning(f"Validation error in search: {str(ve)}")
-        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        logger.error(f"Error in search with term '{term}': {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-        players = player_query.all()
-
-        # Group players by team
-        results = []
-        team_dict = {}
-
-        # First add teams with direct matches
-        for team in teams:
-            team_dict[team.team_id] = {
-                "team": {
-                    "team_id": team.team_id,
-                    "name": team.name,
-                    "logo_url": team.logo_url
-                },
-                "players": []
-            }
-            results.append(team_dict[team.team_id])
-
-        # Then add players under their teams
-        for player in players:
-            # If player's team wasn't a direct match, add it
-            if player.current_team_id not in team_dict:
-                team = db.query(Team).filter(Team.team_id == player.current_team_id).first()
-                if team:
-                    team_dict[team.team_id] = {
-                        "team": {
-                            "team_id": team.team_id,
-                            "name": team.name,
-                            "logo_url": team.logo_url
-                        },
-                        "players": []
-                    }
-                    results.append(team_dict[team.team_id])
-            
-            # Add player to their team's group
-            if player.current_team_id in team_dict:
-                team_dict[player.current_team_id]["players"].append({
-                    "player_id": player.player_id,
-                    "full_name": player.full_name,
-                    "is_traded_flag": player.traded_date is not None
-                })
-
-        return results
-
-    except Exception as e:
-        logger.error(f"Error in search: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise ErrorHandler.handle_error(e, f"search with term '{term}'")

@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, Path
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime
 import logging
 
 from app.core.config import settings
+from app.core.exceptions import ErrorHandler, NotFoundError, ValidationException
 from app.schemas.validation import TeamIdSchema, validate_nba_team_id
 from app.models.models import Team as TeamModel, DataUpdateStatus
 from app.database.database import get_db, get_async_db
@@ -22,9 +24,10 @@ def get_teams(db: Session = Depends(get_db)):
     try:
         teams = db.query(TeamModel).all()
         return teams
+    except SQLAlchemyError as e:
+        raise ErrorHandler.handle_error(e, "fetching teams")
     except Exception as e:
-        logger.error(f"Error fetching teams: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise ErrorHandler.handle_error(e, "fetching teams")
 
 @router.get("/{team_id}")
 def get_team(
@@ -38,16 +41,14 @@ def get_team(
         
         team = db.query(TeamModel).filter(TeamModel.team_id == team_id).first()
         if team is None:
-            raise HTTPException(status_code=404, detail="Team not found")
+            raise NotFoundError("Team", str(team_id))
         return team
-    except ValueError as ve:
-        logger.warning(f"Validation error in get_team: {str(ve)}")
-        raise HTTPException(status_code=400, detail=str(ve))
-    except HTTPException:
-        raise
+    except (ValueError, ValidationException) as e:
+        raise ErrorHandler.handle_error(e, f"validating team ID {team_id}")
+    except SQLAlchemyError as e:
+        raise ErrorHandler.handle_error(e, f"fetching team {team_id}")
     except Exception as e:
-        logger.error(f"Error fetching team {team_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise ErrorHandler.handle_error(e, f"fetching team {team_id}")
 
 @router.post("/{team_id}/update")
 async def update_team(

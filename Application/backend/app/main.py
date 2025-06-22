@@ -15,6 +15,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
+from app.core.exceptions import global_exception_handler, NBAStatsException
 from app.models.models import DataUpdateStatus, Team
 from app.database.database import get_db, get_async_db, engine, Base, SessionLocal
 from app.database.init_db import init_db
@@ -191,6 +192,11 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         content=response
     )
 
+# Global exception handler for consistent error responses
+@app.exception_handler(Exception)
+async def handle_global_exception(request: Request, exc: Exception):
+    return await global_exception_handler(request, exc)
+
 # Add security middleware
 if settings.environment == "production":
     # Add HTTPS redirect and trusted host middleware for production
@@ -354,6 +360,9 @@ async def reset_update_status(db: Session = Depends(get_db)):
 
 # Mount all routes
 app.include_router(api_router)
+
+# Add global exception handler
+app.add_exception_handler(Exception, global_exception_handler)
 
 if __name__ == "__main__":
     import uvicorn

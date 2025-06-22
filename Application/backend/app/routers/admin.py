@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
@@ -9,6 +9,7 @@ from app.models.models import DataUpdateStatus, Team  # Import Team
 from app.services.nba_data_service import NBADataService
 from app.services.background_task_manager import BackgroundTaskManager, TaskStatus
 from app.schemas.validation import AdminUpdateSchema, validate_nba_team_id, sanitize_string
+from app.core.exceptions import ErrorHandler, ValidationException
 
 router = APIRouter(
     prefix="/admin",
@@ -69,20 +70,19 @@ async def get_admin_status(db: Session = Depends(get_db)):
             }
         }
     except Exception as e:
-        logger.error(f"Error getting admin status: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise ErrorHandler.handle_error(e, "get admin status")
 
 @router.post("/update/all")
 async def trigger_full_update(db: Session = Depends(get_db)):
     """Trigger a full update of all data"""
     status = db.query(DataUpdateStatus).first()
     if status and getattr(status, 'is_updating'):
-        raise HTTPException(status_code=400, detail="Update already in progress")
+        raise ValidationException("Update already in progress")
     
     # Check if there's already a task running
     active_tasks = task_manager.get_active_tasks()
     if active_tasks:
-        raise HTTPException(status_code=400, detail="Background task already in progress")
+        raise ValidationException("Background task already in progress")
     
     if not status:
         status = DataUpdateStatus()
@@ -229,11 +229,11 @@ async def trigger_component_update(
 ):
     """Trigger update for a specific component (teams, players, or games)"""
     if component not in ["teams", "players", "games"]:
-        raise HTTPException(status_code=400, detail="Invalid component specified")
+        raise ValidationException("Invalid component specified")
     
     status = db.query(DataUpdateStatus).first()
     if status and getattr(status, 'is_updating'):
-        raise HTTPException(status_code=400, detail="Update already in progress")
+        raise ValidationException("Update already in progress")
     
     if not status:
         status = DataUpdateStatus()
