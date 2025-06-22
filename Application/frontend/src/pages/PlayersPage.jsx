@@ -241,7 +241,7 @@ const PlayersPage = () => {
   })
 
   // Only show loading spinner if players are loading, not teams
-  if (playersLoading || (!players?.length && !id) || (id && !players)) {
+  if (playersLoading || (!players?.players?.length && !id) || (id && !players)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
         <LoadingSpinner size="large" className="text-primary" />
@@ -450,30 +450,32 @@ const PlayersPage = () => {
   const groupPlayersByTeam = () => {
     const grouped = {}
     
-    if (!players?.length) {
+    if (!players?.players?.length) {
       return grouped
     }
+    
+    const playersList = players.players
     
     // Group by teams first if teams data is available
     if (teams?.length > 0) {
       // Sort teams alphabetically for consistent display order
       const sortedTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name))
       sortedTeams.forEach(team => {
-        const teamPlayers = players.filter(player => player.current_team_id === team.team_id)
+        const teamPlayers = playersList.filter(player => player.current_team_id === team.team_id)
         if (teamPlayers.length > 0) {
           grouped[team.name] = teamPlayers
         }
       })
     } else if (!teamsLoading) {
       // If teams failed to load, show all players with team IDs as "Unknown Team"
-      const playersWithTeams = players.filter(player => player.current_team_id)
+      const playersWithTeams = playersList.filter(player => player.current_team_id)
       if (playersWithTeams.length > 0) {
         grouped['Players (Team info unavailable)'] = playersWithTeams
       }
     }
     
     // Add free agents at the end
-    const freeAgents = players.filter(player => !player.current_team_id)
+    const freeAgents = playersList.filter(player => !player.current_team_id)
     if (freeAgents.length > 0) {
       grouped['Free Agents'] = freeAgents
     }
@@ -591,7 +593,7 @@ const PlayersPage = () => {
           <div className="text-center py-8">
             <p className="text-muted-foreground">No players found or still loading...</p>
             <p className="text-sm text-muted-foreground mt-2">
-              Players: {players?.length || 0}, Teams: {teams?.length || 0}
+              Players: {players?.players?.length || 0}, Teams: {teams?.length || 0}
             </p>
           </div>
         )}

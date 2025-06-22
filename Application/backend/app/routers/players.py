@@ -20,7 +20,7 @@ async def get_players(
     team_id: Optional[int] = Query(None, description="Filter by team ID"),
     active_only: bool = Query(True, description="Only return active players"),
     page: int = Query(1, ge=1, le=1000, description="Page number"),
-    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    per_page: int = Query(20, ge=1, le=1000, description="Items per page"),
     db: Session = Depends(get_db)
 ):
     """Get all players, optionally filtered by team with pagination"""

@@ -74,11 +74,12 @@ export const fetchTeam = async (teamId) => {
   }
 }
 
-export const fetchPlayers = async (teamId = null, activeOnly = true) => {
+export const fetchPlayers = async (teamId = null, activeOnly = true, perPage = 1000) => {
   try {
     const params = new URLSearchParams()
     if (teamId) params.append('team_id', teamId)
     if (activeOnly) params.append('active_only', activeOnly)
+    params.append('per_page', perPage)
     
     const url = `${API_BASE_URL}/players${params.toString() ? `?${params}` : ''}`
     return await fetchWithRetry(url)

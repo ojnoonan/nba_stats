@@ -158,7 +158,7 @@ class AdminUpdateSchema(BaseModel):
 class PaginationSchema(BaseModel):
     """Schema for pagination parameters."""
     page: int = Field(1, ge=1, le=1000, description="Page number")
-    per_page: int = Field(20, ge=1, le=100, description="Items per page")
+    per_page: int = Field(20, ge=1, le=1000, description="Items per page")
     
     @property
     def offset(self) -> int:

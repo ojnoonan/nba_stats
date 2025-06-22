@@ -58,7 +58,7 @@ const HomePage = () => {
     },
     {
       title: 'Players',
-      count: players?.length || 0,
+      count: players?.players?.length || 0,
       path: '/players',
       isLoading: status?.is_updating && status.current_phase === 'players',
       isRefetching: isRefetchingPlayers,

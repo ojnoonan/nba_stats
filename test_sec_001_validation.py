@@ -130,9 +130,9 @@ def test_pagination_limits():
     """Test pagination limits and bounds checking"""
     print("📄 Testing pagination limits...")
     
-    # Test excessive page size
+    # Test excessive page size (beyond the new limit of 1000)
     try:
-        response = requests.get(f"{BASE_URL}/players", params={"per_page": 1000})
+        response = requests.get(f"{BASE_URL}/players", params={"per_page": 2000})
         if response.status_code == 400:
             print("✅ Excessive page size rejected")
         else:
